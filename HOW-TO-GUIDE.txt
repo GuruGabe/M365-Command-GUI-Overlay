@@ -1,0 +1,165 @@
+================================================================================
+  M365GUI - HOW-TO GUIDE FOR NEW USERS
+  A plain-English guide for people who have never used the CLI for Microsoft
+  365 or a command line.
+================================================================================
+
+  Read this once before your first use. You do NOT need to know any commands.
+
+
+--------------------------------------------------------------------------------
+  PART 1 - WHAT THIS PROGRAM IS
+--------------------------------------------------------------------------------
+
+  M365GUI is a point-and-click tool for managing Microsoft 365 and Microsoft
+  Entra ID (your organization's Microsoft accounts, groups, licenses, Teams,
+  and SharePoint).
+
+  Think of it like this:
+    - The "m365" CLI is the engine. It talks to Microsoft and does the work.
+    - M365GUI is the dashboard. You fill in a short form, it builds the right
+      instruction for the engine, shows it to you, and runs it.
+
+  You never have to type a command. You pick a task, fill in a couple of boxes,
+  and click Run.
+
+  IMPORTANT: This program does real things to real accounts. When it says it
+  will delete something, it will. Read the screen before you click, and when in
+  doubt, ask IT.
+
+
+--------------------------------------------------------------------------------
+  PART 2 - ONE-TIME SETUP (done by IT)
+--------------------------------------------------------------------------------
+
+  Before M365GUI can do anything, the "m365" CLI must be installed and signed
+  in on the computer:
+
+    1. Install Node.js (https://nodejs.org).
+    2. In a terminal:  npm install -g @pnp/cli-microsoft365
+    3. Sign in:        m365 login   (follow the browser prompts)
+
+  You must be a Microsoft 365 administrator to sign in with the right access.
+  If IT has already done this, you can skip straight to Part 3.
+
+
+--------------------------------------------------------------------------------
+  PART 3 - STARTING THE PROGRAM
+--------------------------------------------------------------------------------
+
+  1. Double-click M365GUI.exe (keep it inside its folder - it needs the
+     _internal folder next to it).
+  2. The title bar shows the version, e.g. "M365GUI 0.2".
+  3. Top left shows "m365:" and a path. If it says "(not found)", click
+     "Locate m365..." and point it at your m365 program, or ask IT to finish
+     the setup in Part 2.
+
+
+--------------------------------------------------------------------------------
+  PART 4 - THE WINDOW
+--------------------------------------------------------------------------------
+
+  LEFT SIDE - the list of tasks, grouped into categories:
+      Users (Entra ID) - create accounts, reset passwords, block sign-in, etc.
+      Groups (Entra)   - create groups, add/remove members
+      Licenses         - see licenses, assign/remove them
+      Teams / M365 Groups - add people to Teams
+      SharePoint       - list sites, add people to site groups
+      Security         - sign someone out everywhere, sign-in activity
+      Diagnostics      - health checks
+      Custom command   - for advanced users
+
+    Click the arrow next to a category to open it, then click a task.
+
+  RIGHT SIDE:
+      1. A description of the task (read it - it explains exactly what happens).
+      2. The form: boxes to fill in. A box with a star (*) is required.
+      3. Command preview: the exact instruction that will run. Nothing runs
+         in secret.
+      4. Buttons: Build, Copy, Run, Stop, Clear output.
+      5. Output box: results appear here after you click Run.
+
+
+--------------------------------------------------------------------------------
+  PART 5 - YOUR FIRST TASK (A SAFE ONE)
+--------------------------------------------------------------------------------
+
+  1. Open "Diagnostics" and click "Login status".
+  2. Click Run.
+  3. The output shows whether the CLI is signed in and to which tenant. This
+     only READS information and changes nothing. "exit code 0" means success.
+
+  That is the whole rhythm: pick a task, fill the boxes, click Run, read the
+  output.
+
+
+--------------------------------------------------------------------------------
+  PART 6 - THE SAFETY FEATURES
+--------------------------------------------------------------------------------
+
+  1. THE PREVIEW - nothing runs until you click Run, and you always see the
+     command first.
+  2. THE DESTRUCTIVE WARNING - tasks that delete or change things are labeled
+     "(DESTRUCTIVE)" and pop a confirmation showing the exact command.
+  3. THE "REMOVE ALL GUESTS" WORKFLOW - it first lists every guest account and
+     the count, then makes you TYPE the word DELETE before it removes anything.
+     Type anything else to cancel.
+  4. THE STOP BUTTON - halts a running task (it cannot undo what already ran).
+  5. THE LOG - everything is saved to the Logs folder next to the program.
+
+
+--------------------------------------------------------------------------------
+  PART 7 - COMMON THINGS YOU MIGHT DO
+--------------------------------------------------------------------------------
+
+  RESET A PASSWORD
+    Users (Entra ID) > Reset password. Enter the user's sign-in name (UPN) and
+    a new password. They will be asked to change it at next sign-in.
+
+  BLOCK A COMPROMISED / DEPARTING ACCOUNT
+    Users > Block sign-in (enter the UPN). To also end active sessions:
+    Security > Sign user out everywhere.
+
+  SEE WHAT LICENSES YOU HAVE, AND WHO HAS ONE
+    Licenses > View all licenses (shows each license and its id). Then
+    Licenses > List users with a specific license (paste the SKU id).
+
+  ADD SOMEONE TO A GROUP OR TEAM
+    Groups (Entra) > Add member to group, or Teams / M365 Groups > Add member
+    to a Team.
+
+  REMOVE ALL GUEST ACCOUNTS
+    Users > Remove ALL guest users. Review the list, type DELETE to confirm.
+
+
+--------------------------------------------------------------------------------
+  PART 8 - WHEN SOMETHING GOES WRONG
+--------------------------------------------------------------------------------
+
+  "m365 (not found)"         - The engine isn't installed/located. See Part 2,
+                               or click Locate m365.
+
+  "Error: [object Object]"   - The engine hit an error but displayed it poorly.
+                               Copy the command, open "Custom command", paste it
+                               with " --debug" added on the end, and Run - that
+                               shows the real reason (often a missing permission
+                               or a license requirement). Then send it to IT.
+
+  "not signed in"            - Run "m365 login" in a terminal, or ask IT.
+
+  Any red-looking error       - Copy everything in the output box and send it to
+                               IT. The exact text is what they need.
+
+
+--------------------------------------------------------------------------------
+  PART 9 - THE GOLDEN RULES
+--------------------------------------------------------------------------------
+
+  1. Read the description and the preview before clicking Run.
+  2. For anything marked DESTRUCTIVE, read the confirmation.
+  3. If you do not recognize a task or are not sure, ask IT first.
+  4. If something looks wrong, click Stop and report it.
+
+================================================================================
+  END OF HOW-TO GUIDE
+================================================================================

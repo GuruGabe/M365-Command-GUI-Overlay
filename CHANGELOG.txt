@@ -1,0 +1,26 @@
+================================================================================
+  CHANGELOG - M365GUI
+================================================================================
+08-07-2026  v0.2  Expanded catalog to 33 tasks across 7 categories, all
+                  verified against CLI for Microsoft 365 v11 with
+                  "m365 <command> --help":
+                  - Users: list, list guests, get, create, reset password,
+                    rename, set usage location, block/unblock sign-in, delete,
+                    list deleted (recycle bin), restore deleted, and a guided
+                    "Remove ALL guest users" workflow (list -> type DELETE ->
+                    remove each).
+                  - Groups: list, list by type, get info, create, list members,
+                    add/remove member, delete.
+                  - Licenses: view all tenant SKUs, list users with a specific
+                    license, assign, remove.
+                  - Teams/SharePoint/Security/Diagnostics tasks.
+                  Fixes: runner now launches m365.cmd via cmd.exe and m365.ps1
+                  (nvm) via PowerShell; template engine's optional [--flag]
+                  segments no longer collide with JMESPath [...] in --query;
+                  nonzero exits show a "re-run with --debug" tip (m365 often
+                  reports "Error: [object Object]").
+08-07-2026  v0.1  Initial prototype. GUI front-end for the CLI for Microsoft
+                  365 built on the same engine as GAMGUI; representative task
+                  set across Users, Groups, Licenses, Teams, SharePoint,
+                  Security, Diagnostics.
+================================================================================
