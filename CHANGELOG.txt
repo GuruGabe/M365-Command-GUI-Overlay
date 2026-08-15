@@ -1,6 +1,14 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+08-07-2026  v0.3  DEPLOY FIX: the build no longer ships the Tcl encoding
+                  files (_internal\_tcl_data\encoding\*.enc). Endpoint
+                  security (e.g. CrowdStrike) blocks the .enc extension - it
+                  looks like ransomware output - so copying the app to other
+                  machines failed with "permission denied" for every account.
+                  Tcl 9 keeps these encodings inside the DLL and falls back
+                  to them, so extract_tcl.py now removes the loose .enc files.
+                  Verified 0 .enc shipped and the app runs normally.
 08-07-2026  v0.2  Expanded catalog to 33 tasks across 7 categories, all
                   verified against CLI for Microsoft 365 v11 with
                   "m365 <command> --help":

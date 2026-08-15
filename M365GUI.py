@@ -3,7 +3,7 @@
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
 # Modified: 08-07-2026
-# Version:  0.2
+# Version:  0.3
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -37,7 +37,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.2"
+APP_VERSION = "0.3"
 
 # =============================================================================
 # SECTION: Locating the m365 CLI
