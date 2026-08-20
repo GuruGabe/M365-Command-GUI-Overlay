@@ -168,25 +168,89 @@ be careful, but treat it with respect:
 
 ---
 
-## Build from source
+## Running and building from source (Windows, macOS, Linux)
 
-M365GUI is a single Python file (`M365GUI.py`) using only the standard library.
+M365GUI is a single Python file (`M365GUI.py`) using only the standard library
+(tkinter), so it runs on all three platforms. You still need the CLI for
+Microsoft 365 installed and signed in (see [Requirements](#requirements)) - it
+runs on Node.js and is itself cross-platform.
 
-```bat
-py -m pip install pyinstaller
-Build-EXE.bat
+### Run without building (simplest)
+
+Requires Python 3.10+ **with tkinter**:
+
+- **Windows** - tkinter is included with the python.org installer:
+  ```bat
+  py M365GUI.py
+  ```
+- **macOS** - the python.org installer includes tkinter. If you use Homebrew
+  Python, add it first with `brew install python-tk`:
+  ```bash
+  python3 M365GUI.py
+  ```
+- **Linux** - install tkinter from your package manager, then run it:
+  ```bash
+  # Debian/Ubuntu:
+  sudo apt install python3 python3-tk
+  # Fedora/RHEL:
+  sudo dnf install python3 python3-tkinter
+  # Arch:
+  sudo pacman -S tk
+  python3 M365GUI.py
+  ```
+
+### Build a standalone app (PyInstaller)
+
+Install PyInstaller once: `pip install pyinstaller` (or `pip3 install ...`).
+
+- **Windows:**
+  ```bat
+  Build-EXE.bat
+  ```
+- **macOS / Linux:**
+  ```bash
+  chmod +x build-app.sh
+  ./build-app.sh
+  ```
+
+Both scripts run `extract_tcl.py` and then PyInstaller in one-folder mode. The
+result is `dist/M365GUI/` - copy the whole folder and keep it together (on macOS
+you also get a `dist/M365GUI.app` bundle). Run `dist/M365GUI/M365GUI` (or the
+`.app`).
+
+Prefer the raw PyInstaller command?
+
+```bash
+# Python 3.13 or earlier (Tcl/Tk 8.6):
+pyinstaller --onedir --windowed --name M365GUI M365GUI.py
+
+# Python 3.14+ (Tcl/Tk 9): extract the Tcl data first, then bundle it.
+python3 extract_tcl.py
+pyinstaller --onedir --windowed --name M365GUI \
+    --add-data "build_res/_tcl_data:_tcl_data" \
+    --add-data "build_res/_tk_data:_tk_data" \
+    M365GUI.py
 ```
 
-`Build-EXE.bat` runs `extract_tcl.py` and then PyInstaller in one-folder mode.
-The extract step is **required on Python 3.14+**: Tcl/Tk 9 stores its script
-library inside the DLL as a virtual zip filesystem, which PyInstaller doesn't
-bundle on its own - without it the app crashes at startup with
-`Tcl data directory _tcl_data not found`. The result is `dist\M365GUI\` -
-distribute the whole folder.
+macOS/Linux use a colon (`:`) in `--add-data`; Windows uses a semicolon (`;`).
 
-**macOS/Linux:** build on that OS with
-`pyinstaller --onedir --windowed --name M365GUI M365GUI.py` (Linux needs the
-`python3-tk` package). To just run it without building: `python M365GUI.py`.
+### Why the extract step (Python 3.14+)
+
+Tcl/Tk 9 stores its script library inside the Tcl shared library as a virtual
+zip filesystem, which PyInstaller doesn't bundle on its own - without it the app
+crashes at startup with `Tcl data directory _tcl_data not found`.
+`extract_tcl.py` copies that library to disk (and drops the `.enc` encoding
+tables, which some endpoint security blocks) so PyInstaller can bundle it. On
+Python 3.13 or earlier you can skip it.
+
+### macOS Gatekeeper
+
+The app isn't code-signed, so macOS may block it on first launch. Right-click the
+app and choose **Open**, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine dist/M365GUI
+```
 
 ---
 
@@ -209,7 +273,8 @@ distribute the whole folder.
 |------|---------|
 | `M365GUI.py` | The entire application (single file, standard library only) |
 | `extract_tcl.py` | Build helper: bundles Tcl/Tk data for Python 3.14+ |
-| `Build-EXE.bat` | One-command Windows build |
+| `Build-EXE.bat` | One-command build (Windows) |
+| `build-app.sh` | One-command build (macOS / Linux) |
 | `HOW-TO-GUIDE.txt` | Plain-English guide for non-technical users |
 | `README.txt` | Full reference and troubleshooting |
 | `CHANGELOG.txt` | Version history |
