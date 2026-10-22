@@ -83,6 +83,29 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
 - Docs: [Teams / M365 groups](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/)
   · [SharePoint](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/)
 
+### OneDrive - when someone leaves
+- **Copy a user's OneDrive files to another user** (new in 0.4): everything in
+  the leaver's OneDrive is copied into a new folder (*Files from jdoe
+  MM-DD-YYYY*, or a name you choose) in the OneDrive of the person you name -
+  usually their manager. It shows how many files and how much data before it
+  starts, asks you once, then counts the files that arrived and saves a CSV
+  record of every copy in the `Logs` folder.
+- **Nothing is removed** from the original owner, and a file with the same
+  name is renamed, never overwritten.
+- You need to be a **SharePoint or Global administrator**. M365GUI makes you a
+  site admin of both OneDrives for the copy and removes that again afterwards -
+  only the access it added (or keep it, if you choose).
+- **Find a user's OneDrive address** - empty means their OneDrive has never
+  been set up.
+- Docs: [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/)
+  · [spo site admin add](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-admin-add/)
+
+> [!NOTE]
+> OneDrive and SharePoint commands need the CLI signed in with **its own Entra
+> app** (`m365 setup`, recommended by the CLI since v10). Signed in through the
+> Azure CLI's app, Microsoft Graph works but every SharePoint call fails with
+> `invalid_request` (401). See [Troubleshooting](#troubleshooting).
+
 ### Security
 - **Sign a user out everywhere** (revoke sessions) - first move on a
   compromised account - and view **sign-in activity**.
@@ -143,6 +166,7 @@ walkthrough. **README.txt** is the full reference.
 | Licenses | View all SKUs, list users with a license, assign, remove | [entra license](https://pnp.github.io/cli-microsoft365/cmd/entra/license/license-list/) |
 | Teams / M365 Groups | Add member to a Team | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
 | SharePoint | List sites, add user to a site group | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
+| OneDrive | Find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
 | Security | Sign out everywhere, sign-in activity | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
 | Diagnostics | Login status, CLI version, tenant id | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
 
@@ -163,6 +187,10 @@ be careful, but treat it with respect:
 - **You always see the command first,** and destructive tasks pop a
   confirmation. The "Remove all guests" workflow lists everything and makes you
   type **DELETE** before it removes anything.
+- **No shell in between (0.4).** M365GUI starts Node with the CLI's own script
+  directly. Before 0.4 it went through `cmd.exe` (`m365.cmd`), which treated
+  `&` in a value - a folder named *Q&A*, a group named *Sales & Marketing* - as
+  the start of another command.
 - **Test in a non-production tenant first** when you're learning.
 - **Logs can contain user and tenant details** - store and share accordingly.
 
@@ -262,6 +290,8 @@ xattr -dr com.apple.quarantine dist/M365GUI
 | `Error: [object Object]` | The CLI is hiding a real error. Re-run the command in **Custom command** with `--debug` added to see the actual message (often a missing Graph permission or a premium-license requirement). |
 | "Windows protected your PC" on launch | The app isn't code-signed. Click **More info -> Run anyway**. |
 | A command says you're not signed in | Run `m365 login` in a terminal, or **Diagnostics -> Login status** to check. |
+| Every SharePoint / OneDrive task fails with `{"error":{"error":"invalid_request"}}` while user and group tasks work | The CLI is signed in through the Azure CLI's app, which SharePoint refuses. Run `m365 setup` in a terminal once: let it **create a new app registration** (needs a Global administrator to approve), choose the full permission set and **scripting** use, then `m365 login` again. |
+| OneDrive copy: "Could not read who can manage ..." | You need the SharePoint administrator or Global administrator role, and the fix above. |
 | App won't start after unzipping | Keep `M365GUI.exe` and its `_internal` folder together in one folder. |
 | `Tcl data directory _tcl_data not found` (building yourself) | Run `extract_tcl.py` before PyInstaller, or just use `Build-EXE.bat`. |
 
@@ -272,6 +302,7 @@ xattr -dr com.apple.quarantine dist/M365GUI
 | File | Purpose |
 |------|---------|
 | `M365GUI.py` | The entire application (single file, standard library only) |
+| `tests\` | `python tests\test_*.py` - each prints `FAILURES: N` (a fake `m365` - nothing touches your tenant) |
 | `extract_tcl.py` | Build helper: bundles Tcl/Tk data for Python 3.14+ |
 | `Build-EXE.bat` | One-command build (Windows) |
 | `build-app.sh` | One-command build (macOS / Linux) |

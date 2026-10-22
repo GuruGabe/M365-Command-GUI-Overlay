@@ -1,6 +1,34 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-22-2026  v0.4  ONEDRIVE: COPY A USER'S FILES TO ANOTHER USER; NO SHELL.
+                  - New OneDrive section:
+                    - 'Copy a user's OneDrive files to another user' - for
+                      a leaver: copies everything into a new folder in the
+                      recipient's OneDrive. Nothing is removed from the
+                      leaver; same-name files are renamed, never
+                      overwritten. Shows the file count and size, asks
+                      Yes/No once, then counts the files that arrived and
+                      saves a CSV record (Logs\OneDrive-Copy_*.csv). The
+                      admin is made site admin of both OneDrives for the
+                      run; only the access M365GUI added is removed again
+                      (or kept, if chosen). Stop ends it after the current
+                      item and still removes the access.
+                    - 'Find a user's OneDrive address'.
+                  - SECURITY FIX: commands no longer go through cmd.exe.
+                    m365.cmd passed every value to cmd.exe, which treated
+                    '&' (and | < > ^) as the start of ANOTHER command - a
+                    value 'a&echo.x' ran 'echo.x' (checked live 10-22-2026).
+                    A display name, group or file/folder name with '&'
+                    could run something on the admin's PC. M365GUI now
+                    starts node with the CLI's own script directly. On an
+                    install where that script is not found it still uses
+                    m365.cmd but refuses such values.
+                  - No console window flashes up for each command, and a
+                    question from the CLI can no longer leave a task
+                    hanging (commands get an empty input).
+                  - Tests: tests\test_onedrive_transfer.py (fake m365, 31
+                    checks), tests\test_invocation.py.
 08-07-2026  v0.3  DEPLOY FIX: the build no longer ships the Tcl encoding
                   files (_internal\_tcl_data\encoding\*.enc). Endpoint
                   security (e.g. CrowdStrike) blocks the .enc extension - it

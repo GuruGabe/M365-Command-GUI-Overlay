@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 33
-   common admin tasks as fill-in forms across 7 categories: Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 35
+   common admin tasks as fill-in forms across 8 categories: OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Security, and Diagnostics
    - plus a Custom-command mode for any m365 command.
 
@@ -58,10 +58,27 @@
    full command. The "Remove ALL guest users" task lists everything and makes
    you type DELETE before removing anything.
 
+   COPY A USER'S ONEDRIVE FILES TO ANOTHER USER (OneDrive section, v0.4):
+     - Copies EVERYTHING in the From user's OneDrive into a new folder in the
+       To user's OneDrive (default name 'Files from <name> MM-DD-YYYY').
+       Nothing is removed from the From user. A file with the same name is
+       renamed (Report1.docx), never overwritten.
+     - To read and write both OneDrives, the signed-in admin is made a site
+       collection admin of each (SharePoint admin center). Afterwards M365GUI
+       removes ONLY the access it added, unless 'Keep my access to both
+       OneDrives' was chosen.
+     - It shows the number of files and their size and asks once (Yes/No)
+       before copying anything. Stop ends it after the current item; the
+       temporary access is still removed.
+
 5. LOG FILES
    Logs\M365GUI_MM-DD-YYYY_HH-MM-SS.log next to the program - one per session,
    with every command and its output. Logs can include user/tenant details;
    keep or purge per your retention practice.
+   Logs\OneDrive-Copy_<name>_MM-DD-YYYY_HH-MM-SS.csv - one per OneDrive copy:
+   every item copied (type, source path, copied / FAILED, detail). File and
+   folder names of the leaver's OneDrive are in it - keep it with the
+   hand-over records and delete it when no longer needed.
 
 6. TROUBLESHOOTING
    "m365 (not found)"        - Click Locate m365, or install the CLI on PATH.
@@ -70,12 +87,22 @@
                                message (often a missing Graph permission or a
                                premium-license requirement).
    "not signed in"           - Run "m365 login" in a terminal.
+   SharePoint / OneDrive tasks fail with {"error":{"error":"invalid_request"}}
+                             - the CLI is signed in through the Azure CLI's
+                               app, which SharePoint refuses. Run "m365 setup"
+                               once in a terminal: create a new app
+                               registration (a Global administrator approves
+                               it), full permission set, scripting use; then
+                               "m365 login" again.
+   OneDrive copy: "Could not read who can manage ..."
+                             - you need the SharePoint administrator or Global
+                               administrator role (and the fix above).
    Window won't start        - Keep M365GUI.exe with its _internal folder.
    Build error _tcl_data     - Run extract_tcl.py before PyInstaller, or use
                                Build-EXE.bat.
 
 7. KNOWN LIMITATIONS
-   - The 33 built-in forms cover everyday Entra/M365 tasks, not every m365
+   - The 35 built-in forms cover everyday Entra/M365 tasks, not every m365
      command - that is what Custom command mode is for.
    - No Exchange Online (email) tasks yet; the command names need confirming on
      the target CLI build.

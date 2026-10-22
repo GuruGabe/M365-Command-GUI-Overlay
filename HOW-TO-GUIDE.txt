@@ -131,6 +131,16 @@
   REMOVE ALL GUEST ACCOUNTS
     Users > Remove ALL guest users. Review the list, type DELETE to confirm.
 
+  GIVE A LEAVER'S ONEDRIVE FILES TO THEIR MANAGER
+    OneDrive > Copy a user's OneDrive files to another user. Type the
+    leaver's sign-in name in From and the manager's in To, and click Run.
+    It tells you how many files it found and asks Yes/No. The files are
+    COPIED into a new folder in the manager's OneDrive ("Files from <name>
+    <date>"); nothing is taken away from the leaver. At the end it counts
+    the files that arrived - read the last lines. A record of every copy is
+    saved in the Logs folder. You must be a SharePoint or Global
+    administrator.
+
 
 --------------------------------------------------------------------------------
   PART 8 - WHEN SOMETHING GOES WRONG

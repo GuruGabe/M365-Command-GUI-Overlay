@@ -3,8 +3,9 @@
 ## Status
 
 - Single-file tkinter application (`M365GUI.py`), Python standard library only.
-- 33 tasks across 7 categories, plus a Custom-command mode and a guided
-  "remove all guest users" workflow.
+- 35 tasks across 8 categories, plus a Custom-command mode and two guided
+  workflows: "remove all guest users" and (0.4) "copy a user's OneDrive files
+  to another user".
 - Drives the [CLI for Microsoft 365](https://pnp.github.io/cli-microsoft365/)
   (`m365`). All commands verified against CLI v11 with `m365 <command> --help`.
 - Windows one-folder build via `Build-EXE.bat` (bundles Tcl/Tk 9 data for
@@ -38,3 +39,15 @@
 a task is a few lines and needs no new code. Please keep it dependency-free
 (standard library only), and verify any new command with `m365 <command> --help`
 before adding it.
+
+## Session log
+
+- 10-22-2026 (v0.4): OneDrive section - 'Copy a user's OneDrive files to
+  another user' (spo folder/file copy into a new folder, temporary site
+  collection admin via spo site admin add/remove --asAdmin, file counts
+  before/after, CSV record) and 'Find a user's OneDrive address' (Graph
+  mySite). Commands now start node + the CLI script directly (cmd.exe ran
+  anything after an '&' in a value). Tests: tests\test_onedrive_transfer.py,
+  tests\test_invocation.py. Not yet run against a real tenant: with the CLI
+  signed in through the Azure CLI app, every SharePoint call returns 401
+  invalid_request ('m365 setup' with the CLI's own Entra app is the fix).
