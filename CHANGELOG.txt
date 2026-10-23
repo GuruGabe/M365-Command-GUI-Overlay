@@ -1,6 +1,28 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-23-2026  v0.5  INSTALLERS FOR WINDOWS, MACOS AND LINUX; UPDATES ITSELF.
+                  - Every release now has an installer and a portable copy
+                    for each system, like GAMGUI: Windows Setup.exe
+                    (Program Files, Start Menu and desktop shortcuts,
+                    Add/Remove Programs) and zip; macOS .dmg and zip;
+                    Linux .deb, .rpm and tar.gz. The SHA-256 of each file
+                    is in the release notes.
+                  - Help > Check for updates now, and a check at startup
+                    (can be switched off). M365GUI asks first, then
+                    installs only a download whose SHA-256 matches the
+                    release notes, and restarts itself. A portable copy
+                    keeps its settings and logs.
+                  - Help > What's new shows the changes - and opens once by
+                    itself after an update (can be switched off).
+                  - An installed copy keeps its settings and logs in a
+                    per-user folder (Program Files and /opt are read-only):
+                    %LOCALAPPDATA%\M365GUI, ~/Library/Application
+                    Support/M365GUI or ~/.local/share/M365GUI.
+                  - macOS / Linux: m365 and Node.js are found in their usual
+                    folders even when the app is started from Finder or a
+                    menu (no Terminal PATH).
+                  - Tests: tests\test_v05_installers.py.
 10-22-2026  v0.4  ONEDRIVE: COPY A USER'S FILES TO ANOTHER USER; NO SHELL.
                   - New OneDrive section:
                     - 'Copy a user's OneDrive files to another user' - for

@@ -42,6 +42,16 @@ before adding it.
 
 ## Session log
 
+- 10-23-2026 (v0.5): installers and in-app updates ported from GAMGUI -
+  .github/workflows/build-installers.yml (7 files per release),
+  installer/m365gui.iss (its own AppId), build-macos-dmg.sh,
+  build-linux-packages.sh, updatem365gui.ps1 (refuses a file without a
+  published SHA-256), m365_update.py; Help menu (update check, What's new,
+  About); settings/logs in a per-user folder for installed copies; m365 and
+  node found in the usual npm/Node folders on macOS/Linux. Releases are made
+  by a release script kept outside the repo (tests, scan, build, SHA-256
+  lines, smoke test). Test: tests\test_v05_installers.py.
+
 - 10-22-2026 (v0.4): OneDrive section - 'Copy a user's OneDrive files to
   another user' (spo folder/file copy into a new folder, temporary site
   collection admin via spo site admin add/remove --asAdmin, file counts

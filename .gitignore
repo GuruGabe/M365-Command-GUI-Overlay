@@ -18,3 +18,7 @@ m365gui.ini
 # Packaging artifacts
 *.zip
 _share_stage/
+
+# Release workflow files (Release-M365GUI.ps1) - never published
+RELEASE-HOLD.txt
+RELEASE-NOTES-NEXT.md

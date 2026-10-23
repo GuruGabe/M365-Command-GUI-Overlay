@@ -41,6 +41,7 @@ IF ERRORLEVEL 1 (
 py -m PyInstaller --onedir --windowed --name M365GUI ^
     --add-data "build_res\_tcl_data;_tcl_data" ^
     --add-data "build_res\_tk_data;_tk_data" ^
+    --add-data "CHANGELOG.txt;." ^
     M365GUI.py
 IF ERRORLEVEL 1 (
     ECHO Build FAILED. Review the PyInstaller output above.

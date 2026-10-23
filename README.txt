@@ -23,8 +23,8 @@
    m365 sign-in.
 
 2. REQUIREMENTS
-   - Windows 10/11 (EXE build). From source: any OS with Python 3.10+ and
-     tkinter.
+   - Windows 10/11, macOS or Linux (installers for all three since v0.5).
+     From source: any OS with Python 3.10+ and tkinter.
    - The CLI for Microsoft 365 installed and signed in:
        npm install -g @pnp/cli-microsoft365
        m365 login
@@ -36,12 +36,28 @@
    FOR NON-TECHNICAL USERS: see HOW-TO-GUIDE.txt for a plain-English
    walkthrough.
 
-   EXE (recommended) - ONE-FOLDER app:
+   INSTALLERS (v0.5) - from the Releases page on GitHub:
+     Windows  M365GUI-<version>-Setup.exe   installs to Program Files (admin),
+              Start Menu + desktop shortcuts, Add/Remove Programs entry,
+              registry HKLM\SOFTWARE\M365GUI (Version, InstallLocation).
+     macOS    M365GUI-<version>.dmg         drag M365GUI to Applications.
+     Linux    m365gui_<version>_amd64.deb   sudo apt install ./m365gui_*.deb
+              m365gui-<version>-1.x86_64.rpm  sudo dnf install ./m365gui-*.rpm
+              (installs to /opt/M365GUI, command 'm365gui', menu entry)
+     The SHA-256 of every file is in the release notes.
+   PORTABLE - M365GUI-<version>-Windows.zip / -macOS.zip / -Linux.tar.gz:
      a. M365GUI ships as a FOLDER (M365GUI\ containing M365GUI.exe and an
         _internal\ folder). Keep the folder together.
      b. Launch M365GUI\M365GUI.exe.
-     c. m365 is found automatically if it is on the PATH. If not, click
-        "Locate m365..." (top right); the choice is saved in m365gui.ini.
+   Either way: m365 is found automatically if it is on the PATH (or in npm's
+   usual folders). If not, click "Locate m365..." (top right); the choice is
+   saved in m365gui.ini.
+   UPDATES: M365GUI checks GitHub for a newer version when it starts (Help >
+   Check for updates at startup) and asks first. It installs a download only
+   if its SHA-256 matches the release notes. Windows: an installed copy
+   re-runs the new Setup.exe (administrator approval needed); a portable copy
+   is replaced by updatem365gui.ps1, keeping m365gui.ini and Logs. Help >
+   What's new lists the changes.
    From source:
      a. Install Python 3.10+.
      b. python M365GUI.py
@@ -51,7 +67,10 @@
      c. Result is dist\M365GUI\ - copy the whole folder.
 
 4. WHAT IT CHANGES / SIDE EFFECTS
-   M365GUI itself only writes m365gui.ini and log files. The m365 commands you
+   M365GUI itself only writes m365gui.ini and log files (next to the app for
+   a portable copy; for an installed copy in %LOCALAPPDATA%\M365GUI,
+   ~/Library/Application Support/M365GUI or ~/.local/share/M365GUI). The
+   update check reads GitHub's public release list (no account, no token). The m365 commands you
    run change whatever they say they change - the preview shows the exact
    command first. Tasks marked DESTRUCTIVE (delete user/group, remove member,
    remove license, sign out, remove all guests) pop a confirmation showing the
@@ -72,7 +91,7 @@
        temporary access is still removed.
 
 5. LOG FILES
-   Logs\M365GUI_MM-DD-YYYY_HH-MM-SS.log next to the program - one per session,
+   Logs\M365GUI_MM-DD-YYYY_HH-MM-SS.log in the settings folder - one per session,
    with every command and its output. Logs can include user/tenant details;
    keep or purge per your retention practice.
    Logs\OneDrive-Copy_<name>_MM-DD-YYYY_HH-MM-SS.csv - one per OneDrive copy:

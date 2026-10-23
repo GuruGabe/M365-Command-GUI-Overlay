@@ -75,13 +75,13 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
 - **List all users** who have a specific license.
 - **Assign** and **remove** licenses.
 - Docs: [entra license list](https://pnp.github.io/cli-microsoft365/cmd/entra/license/license-list/)
-  · [entra user license](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-license-add/)
+  | [entra user license](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-license-add/)
 
 ### Teams & SharePoint
 - **Add members to a Team**, **list SharePoint sites**, add a user to a
   SharePoint group.
 - Docs: [Teams / M365 groups](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/)
-  · [SharePoint](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/)
+  | [SharePoint](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/)
 
 ### OneDrive - when someone leaves
 - **Copy a user's OneDrive files to another user** (new in 0.4): everything in
@@ -98,7 +98,7 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
 - **Find a user's OneDrive address** - empty means their OneDrive has never
   been set up.
 - Docs: [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/)
-  · [spo site admin add](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-admin-add/)
+  | [spo site admin add](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-admin-add/)
 
 > [!NOTE]
 > OneDrive and SharePoint commands need the CLI signed in with **its own Entra
@@ -136,12 +136,33 @@ ID P1/P2 tenant - the app notes these where they apply.
 > you're ready for M365GUI.
 
 ### Step 2 - Get M365GUI (prebuilt - no building required)
-1. Go to the **[Releases](../../releases)** page and download
-   **`M365GUI-vX.Y-Windows.zip`** from the latest release.
-2. **Unzip it**, keeping the whole `M365GUI` folder together (the `M365GUI.exe`
-   needs the `_internal` folder next to it).
-3. Double-click **`M365GUI.exe`**. (Windows may warn about an unrecognized app
-   because it isn't code-signed; choose **More info -> Run anyway**.)
+Go to the **[Releases](../../releases/latest)** page. Every release has an
+installer and a portable copy for each system (since 0.5):
+
+| System | Installer | Portable (no install) |
+|--------|-----------|-----------------------|
+| Windows | **`M365GUI-<version>-Setup.exe`** - installs to Program Files, adds Start Menu and desktop shortcuts and an Add/Remove Programs entry (needs admin) | `M365GUI-<version>-Windows.zip` - unzip anywhere and run `M365GUI.exe` (keep the `_internal` folder next to it) |
+| macOS | **`M365GUI-<version>.dmg`** - open it and drag M365GUI into Applications | `M365GUI-<version>-macOS.zip` |
+| Linux | **`m365gui_<version>_amd64.deb`** (Debian/Ubuntu: `sudo apt install ./m365gui_*.deb`) or **`m365gui-<version>-1.x86_64.rpm`** (Fedora/RHEL: `sudo dnf install ./m365gui-*.rpm`) - installs to `/opt/M365GUI`, adds the `m365gui` command and a menu entry | `M365GUI-<version>-Linux.tar.gz` |
+
+Each file's **SHA-256** is listed in the release notes.
+
+- **Windows:** the app isn't code-signed, so Windows may warn about an
+  unrecognized app; choose **More info -> Run anyway**.
+- **macOS:** see [macOS Gatekeeper](#macos-gatekeeper) the first time.
+
+**Updates:** M365GUI checks for a newer version when it starts (turn this off
+in **Help**) and asks before doing anything. It downloads the new version,
+**checks its SHA-256 against the release notes** - no match, no install - and
+restarts itself. An installed Windows copy asks for administrator approval
+(it re-runs the new Setup.exe); a portable copy keeps your `m365gui.ini` and
+`Logs`. Linux .deb/.rpm installs get the verified package plus the one
+command to install it. **Help > What's new** lists what changed.
+
+**Where settings and logs go:** next to the app for a portable copy; for an
+installed copy `%LOCALAPPDATA%\M365GUI` (Windows),
+`~/Library/Application Support/M365GUI` (macOS) or
+`~/.local/share/M365GUI` (Linux).
 
 Prefer to build it yourself? See [Build from source](#build-from-source).
 
@@ -301,7 +322,11 @@ xattr -dr com.apple.quarantine dist/M365GUI
 
 | File | Purpose |
 |------|---------|
-| `M365GUI.py` | The entire application (single file, standard library only) |
+| `M365GUI.py` | The application (standard library only) |
+| `m365_update.py` | macOS / Linux in-app updater and What's new (from GAMGUI) |
+| `updatem365gui.ps1` | Windows updater (shipped inside the Windows builds) |
+| `installer\` | Inno Setup script (Windows Setup.exe), DMG and deb/rpm build scripts |
+| `.github\workflows\build-installers.yml` | Builds all 7 release files on GitHub for a release tag |
 | `tests\` | `python tests\test_*.py` - each prints `FAILURES: N` (a fake `m365` - nothing touches your tenant) |
 | `extract_tcl.py` | Build helper: bundles Tcl/Tk data for Python 3.14+ |
 | `Build-EXE.bat` | One-command build (Windows) |

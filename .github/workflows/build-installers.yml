@@ -1,0 +1,170 @@
+# =============================================================================
+# build-installers.yml - build M365GUI for Windows, macOS and Linux and attach
+# both a proper INSTALLER and a portable archive for each OS to a release.
+#
+# Per OS this produces:
+#   Windows: M365GUI-<tag>-Setup.exe   (Inno Setup installer; registers an
+#            Add/Remove Programs entry + version under HKLM) and
+#            M365GUI-<tag>-Windows.zip (portable; also what the auto-updater uses)
+#   macOS:   M365GUI-<tag>.dmg         (drag M365GUI.app to Applications) and
+#            M365GUI-<tag>-macOS.zip   (portable)
+#   Linux:   m365gui_<tag>_amd64.deb + m365gui-<tag>-1.x86_64.rpm (register with
+#            dpkg/rpm) and M365GUI-<tag>-Linux.tar.gz (portable)
+#
+# HOW TO USE: create the release for the tag first, then Actions tab ->
+# "Build installers" -> Run workflow -> enter the tag (e.g. 2.9). See
+# docs/RELEASING.md.
+# =============================================================================
+name: Build installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and attach the installers to (e.g. 2.9)"
+        required: true
+
+permissions:
+  contents: write            # required to upload assets onto the release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false       # one OS failing must not cancel the others
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+          # Pinned (as in GAMGUI): 'ubuntu-latest' moves to Ubuntu 26 from 10-19-2026.
+          # The .deb/.rpm are built and checked on 24.04; move on purpose,
+          # after a test build, not when GitHub changes the label.
+          - os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install tkinter, Xvfb, and packaging tools (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb ruby ruby-dev rpm build-essential
+          sudo gem install --no-document fpm
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      # ---- Build the app --------------------------------------------------
+      - name: Build app (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          python extract_tcl.py
+          python -m PyInstaller --onedir --windowed --noconfirm --name M365GUI ^
+            --add-data "build_res/_tcl_data;_tcl_data" ^
+            --add-data "build_res/_tk_data;_tk_data" ^
+            --add-data "CHANGELOG.txt;." M365GUI.py
+          copy /Y updatem365gui.ps1 dist\M365GUI\updatem365gui.ps1
+          copy /Y HOW-TO-GUIDE.txt dist\M365GUI\HOW-TO-GUIDE.txt
+          copy /Y README.txt dist\M365GUI\README.txt
+
+      - name: Build app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          python extract_tcl.py
+          python -m PyInstaller --onedir --windowed --noconfirm --name M365GUI \
+            --add-data "build_res/_tcl_data:_tcl_data" \
+            --add-data "build_res/_tk_data:_tk_data" \
+            --add-data "CHANGELOG.txt:." M365GUI.py
+          cp updatem365gui.ps1 dist/M365GUI/updatem365gui.ps1 || true
+          cp HOW-TO-GUIDE.txt dist/M365GUI/HOW-TO-GUIDE.txt || true
+          cp README.txt dist/M365GUI/README.txt || true
+
+      - name: Build app (Linux, Xvfb gives the Tcl-extract a display)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a python extract_tcl.py
+          python -m PyInstaller --onedir --windowed --noconfirm --name M365GUI \
+            --add-data "build_res/_tcl_data:_tcl_data" \
+            --add-data "build_res/_tk_data:_tk_data" \
+            --add-data "CHANGELOG.txt:." M365GUI.py
+          cp updatem365gui.ps1 dist/M365GUI/updatem365gui.ps1 || true
+          cp HOW-TO-GUIDE.txt dist/M365GUI/HOW-TO-GUIDE.txt || true
+          cp README.txt dist/M365GUI/README.txt || true
+
+      # ---- Portable archives ----------------------------------------------
+      - name: Portable zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/M365GUI -DestinationPath "M365GUI-${{ github.event.inputs.tag }}-Windows.zip"
+
+      - name: Portable tar.gz (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "M365GUI-${{ github.event.inputs.tag }}-Linux.tar.gz" -C dist M365GUI
+
+      # ---- Installers -----------------------------------------------------
+      - name: Installer - Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ github.event.inputs.tag }}" "installer\m365gui.iss"
+
+      # The DMG script stamps the version into M365GUI.app, RE-SIGNS it (a
+      # stamped-but-not-re-signed app is what macOS called "damaged"), and
+      # verifies the signature - so the zip below is made AFTER it and gets the
+      # same validly signed app.
+      - name: Installer - DMG (macOS)
+        if: runner.os == 'macOS'
+        run: bash installer/build-macos-dmg.sh "${{ github.event.inputs.tag }}"
+
+      # 'ditto -c -k' is Apple's way to zip an app bundle: it keeps symlinks
+      # and metadata that plain 'zip' can mangle. The app is then extracted to
+      # a scratch folder and its signature verified, so a broken zip fails the
+      # build instead of reaching users.
+      - name: Portable zip (macOS, includes M365GUI.app) + verify
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc dist "M365GUI-${{ github.event.inputs.tag }}-macOS.zip"
+          CHECK="$(mktemp -d)"
+          ditto -x -k "M365GUI-${{ github.event.inputs.tag }}-macOS.zip" "$CHECK"
+          codesign --verify --deep --strict --verbose=2 "$CHECK/M365GUI.app"
+          echo "Zip OK: app inside verifies"
+
+      - name: Installers - deb + rpm (Linux)
+        if: runner.os == 'Linux'
+        run: bash installer/build-linux-packages.sh "${{ github.event.inputs.tag }}"
+
+      # ---- Attach everything to the release -------------------------------
+      - name: Attach archives + installer (Windows)
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          files: |
+            M365GUI-${{ github.event.inputs.tag }}-Windows.zip
+            M365GUI-${{ github.event.inputs.tag }}-Setup.exe
+
+      - name: Attach archives + installer (macOS)
+        if: runner.os == 'macOS'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          files: |
+            M365GUI-${{ github.event.inputs.tag }}-macOS.zip
+            M365GUI-${{ github.event.inputs.tag }}.dmg
+
+      - name: Attach archives + installers (Linux)
+        if: runner.os == 'Linux'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          files: |
+            M365GUI-${{ github.event.inputs.tag }}-Linux.tar.gz
+            m365gui_${{ github.event.inputs.tag }}_amd64.deb
+            m365gui-${{ github.event.inputs.tag }}-1.x86_64.rpm

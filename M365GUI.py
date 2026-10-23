@@ -35,20 +35,49 @@ import csv
 import urllib.parse
 import datetime
 import configparser
+import hashlib                 # SHA-256 check of update downloads
+import tempfile
+import webbrowser
+import urllib.request          # the update check (GitHub's public release API)
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 
+import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
+
 APP_NAME = "M365GUI"
-APP_VERSION = "0.4"
+APP_VERSION = "0.5"
+
+# GitHub repo that publishes M365GUI releases, and the API endpoint used by
+# the built-in update check. The check only READS this public endpoint.
+UPDATE_REPO = "GuruGabe/M365-Command-GUI-Overlay"
+UPDATE_API_URL = "https://api.github.com/repos/" + UPDATE_REPO + "/releases/latest"
+UPDATE_RELEASES_URL = "https://github.com/" + UPDATE_REPO + "/releases/latest"
 
 # =============================================================================
-# SECTION: Locating the m365 CLI
+# SECTION: Locating the m365 CLI and M365GUI's own folders
 # =============================================================================
 
 def app_dir():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+def resource_path(name):
+    # A file shipped INSIDE the built app (PyInstaller --add-data puts it in
+    # sys._MEIPASS, e.g. CHANGELOG.txt for What's new), or next to
+    # M365GUI.py when running from source.
+    return os.path.join(getattr(sys, "_MEIPASS", None) or app_dir(), name)
+
+def common_m365_locations():
+    # Where npm puts the 'm365' command. A Mac app opened from Finder or the
+    # Dock does NOT get the Terminal's PATH, so 'm365' can work in Terminal
+    # yet be invisible here - these are checked after the PATH.
+    home = os.path.expanduser("~")
+    if os.name == "nt":
+        return [os.path.join(os.environ.get("APPDATA") or "", "npm", "m365.cmd")]
+    return ["/usr/local/bin/m365", "/opt/homebrew/bin/m365", "/usr/bin/m365",
+            os.path.join(home, ".npm-global", "bin", "m365"),
+            os.path.join(home, ".local", "bin", "m365")]
 
 def find_m365(saved_path):
     # The CLI installs (via npm) as wrapper scripts. Prefer m365.cmd on Windows
@@ -64,7 +93,104 @@ def find_m365(saved_path):
         hit = shutil.which(name)
         if hit:
             return hit
+    for candidate in common_m365_locations():
+        if os.path.isfile(candidate):
+            return candidate
     return ""
+
+def find_node(near=""):
+    # Node.js, which runs the CLI: next to the m365 wrapper (some npm
+    # installs), on the PATH, then where its installers put it (a Mac app
+    # started from Finder has no Terminal PATH).
+    names = ("node.exe",) if os.name == "nt" else ("node",)
+    for name in names:
+        if near and os.path.isfile(os.path.join(near, name)):
+            return os.path.join(near, name)
+    hit = shutil.which("node")
+    if hit:
+        return hit
+    if os.name == "nt":
+        candidates = [os.path.join(os.environ.get("ProgramFiles") or r"C:\Program Files",
+                                   "nodejs", "node.exe")]
+    else:
+        candidates = ["/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node"]
+    return next((c for c in candidates if os.path.isfile(c)), "")
+
+def _is_writable(path):
+    # True only if a file can really be CREATED in 'path'. os.access(W_OK)
+    # is unreliable on Windows (it reports Program Files as writable).
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".m365gui_write_test")
+        with open(probe, "w") as handle:
+            handle.write("")
+        os.remove(probe)
+        return True
+    except Exception:
+        return False
+
+def data_dir():
+    # Where M365GUI keeps m365gui.ini and Logs (v0.5, same rules as GAMGUI):
+    #   macOS app      ~/Library/Application Support/M365GUI (never inside
+    #                  the signed .app - writing there breaks its signature,
+    #                  and an update replaces the bundle)
+    #   portable copy  next to the app, so everything travels together
+    #   installed copy (Program Files / /opt - not writable for the user)
+    #                  %LOCALAPPDATA%\M365GUI or ~/.local/share/M365GUI
+    base = app_dir()
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        target = m365_update.mac_data_dir()
+    elif _is_writable(base):
+        return base
+    elif os.name == "nt":
+        target = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                              "M365GUI")
+    else:
+        target = os.path.join(os.environ.get("XDG_DATA_HOME")
+                              or os.path.join(os.path.expanduser("~"), ".local", "share"),
+                              "M365GUI")
+    try:
+        os.makedirs(target, exist_ok=True)
+    except Exception:
+        pass
+    return target
+
+def _same_path(a, b):
+    # True if two paths are the same folder (ignoring case and a trailing
+    # slash). Used to tell whether THIS copy is the Setup.exe install.
+    if not a or not b:
+        return False
+    try:
+        na = os.path.normcase(os.path.normpath(a)).rstrip("\\/")
+        nb = os.path.normcase(os.path.normpath(b)).rstrip("\\/")
+        return na == nb
+    except Exception:
+        return False
+
+def registry_exe_install():
+    # The Setup.exe install record installer\m365gui.iss writes to
+    # HKLM\SOFTWARE\M365GUI (Version + InstallLocation): a dict or None.
+    # Windows only; any failure means "no installed copy found".
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+    except Exception:
+        return None
+    for subkey in (r"SOFTWARE\M365GUI", r"SOFTWARE\WOW6432Node\M365GUI"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey) as key:
+                values = {}
+                for name, field in (("InstallLocation", "location"), ("Version", "version")):
+                    try:
+                        values[field] = str(winreg.QueryValueEx(key, name)[0])
+                    except OSError:
+                        values[field] = ""
+                if values["location"] or values["version"]:
+                    return values
+        except OSError:
+            continue
+    return None
 
 # No console window flashing up for each command (the built app has none).
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -78,12 +204,18 @@ def build_invocation(exe, argv):
     # cli-microsoft365\dist\index.js <args>", so M365GUI starts that itself -
     # NO shell. Through cmd.exe, a value such as a folder named 'Q&A' was
     # split at the '&' and the rest RAN AS A COMMAND (checked 10-22-2026).
+    # v0.5: on macOS / Linux npm's 'm365' is a LINK to that index.js (it
+    # starts with '#!/usr/bin/env node', which fails in a Mac app started
+    # from Finder - no Terminal PATH), so follow the link and start node
+    # ourselves there too.
     folder = os.path.dirname(exe)
     script = os.path.join(folder, CLI_SCRIPT)
+    real = os.path.realpath(exe)
+    if not os.path.isfile(script) and real.replace("\\", "/").endswith(
+            "/@pnp/cli-microsoft365/dist/index.js"):
+        script = real
     if os.path.isfile(script):
-        node = os.path.join(folder, "node.exe")
-        if not os.path.isfile(node):
-            node = shutil.which("node") or ""
+        node = find_node(folder)
         if node:
             return [node, script] + list(argv)
     low = exe.lower()
@@ -100,8 +232,9 @@ def build_invocation(exe, argv):
                 "-File", exe] + list(argv)
     return [exe] + list(argv)
 
-INI_PATH = os.path.join(app_dir(), "m365gui.ini")
-LOG_DIR = os.path.join(app_dir(), "Logs")
+DATA_DIR = data_dir()
+INI_PATH = os.path.join(DATA_DIR, "m365gui.ini")
+LOG_DIR = os.path.join(DATA_DIR, "Logs")
 
 # =============================================================================
 # SECTION: Task catalog (all commands verified against m365 v11 --help)
@@ -604,11 +737,19 @@ class M365Gui(tk.Tk):
         self.workflow_cancel = False
         self.field_vars = []
         self.current_task = None
+        # v0.5 (as in GAMGUI): check GitHub for a newer M365GUI at startup,
+        # and show What's new once after an update. Both can be switched off
+        # in the Help menu (saved in m365gui.ini).
+        self.check_updates = self._setting("check_updates", "true") == "true"
+        self.show_whats_new = self._setting("show_whats_new", "true") == "true"
+        self._update_in_progress = False
 
         self._build_layout()
+        self._build_menu()
         self._populate_tree()
         self._preselect()
         self.after(100, self._poll_output)
+        self.after(1500, self._startup_checks)
         if not self.m365_path:
             self._append_output(
                 "NOTE: the 'm365' CLI was not found. Install it with\n"
@@ -897,6 +1038,8 @@ class M365Gui(tk.Tk):
                     break
                 if line is None:
                     self.run_button.config(state="normal")
+                elif callable(line):
+                    line()                      # UI work handed over from a thread
                 elif isinstance(line, tuple) and line[0] == "yesno":
                     _tag, summary, event, result = line
                     try:
@@ -939,6 +1082,367 @@ class M365Gui(tk.Tk):
             self.config_parser.set(APP_NAME.lower(), "m365_path", path)
             with open(INI_PATH, "w", encoding="utf-8") as h:
                 self.config_parser.write(h)
+
+    # ---- settings in m365gui.ini --------------------------------------------
+    def _setting(self, name, default=""):
+        return self.config_parser.get(APP_NAME.lower(), name, fallback=default)
+
+    def _save_setting(self, name, value):
+        try:
+            if not self.config_parser.has_section(APP_NAME.lower()):
+                self.config_parser.add_section(APP_NAME.lower())
+            self.config_parser.set(APP_NAME.lower(), name, value)
+            with open(INI_PATH, "w", encoding="utf-8") as h:
+                self.config_parser.write(h)
+        except Exception:
+            pass                        # a read-only ini must not break the app
+
+    def _log(self, text):
+        # A line for the session log only (not the output box).
+        try:
+            with open(self.log_path, "a", encoding="utf-8") as h:
+                h.write("[" + datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")
+                        + "] " + text + "\n")
+        except OSError:
+            pass
+
+    # ---- Help menu: updates, What's new, About (v0.5, as in GAMGUI) ----------
+    def _build_menu(self):
+        bar = tk.Menu(self)
+        helpm = tk.Menu(bar, tearoff=0)
+        helpm.add_command(label="Check for updates now",
+                          command=lambda: self._check_updates_async(False))
+        self.check_updates_var = tk.BooleanVar(value=self.check_updates)
+        helpm.add_checkbutton(label="Check for updates at startup",
+                              variable=self.check_updates_var,
+                              command=self._toggle_check_updates)
+        self.whats_new_var = tk.BooleanVar(value=self.show_whats_new)
+        helpm.add_checkbutton(label="Show What's new after an update",
+                              variable=self.whats_new_var,
+                              command=self._toggle_whats_new)
+        helpm.add_command(label="What's new", command=lambda: self._show_whats_new(None))
+        helpm.add_separator()
+        helpm.add_command(label="Releases page (all versions)",
+                          command=lambda: webbrowser.open(UPDATE_RELEASES_URL))
+        helpm.add_command(label="About " + APP_NAME, command=self._show_about)
+        bar.add_cascade(label="Help", menu=helpm)
+        self.config(menu=bar)
+
+    def _toggle_check_updates(self):
+        self.check_updates = bool(self.check_updates_var.get())
+        self._save_setting("check_updates", "true" if self.check_updates else "false")
+
+    def _toggle_whats_new(self):
+        self.show_whats_new = bool(self.whats_new_var.get())
+        self._save_setting("show_whats_new", "true" if self.show_whats_new else "false")
+
+    def _show_about(self):
+        messagebox.showinfo("About " + APP_NAME,
+                            APP_NAME + " " + APP_VERSION + "\n\nA graphical front-end "
+                            "for the CLI for Microsoft 365.\n" + UPDATE_RELEASES_URL)
+
+    def _startup_checks(self):
+        # Once, shortly after the window opens: What's new (if this copy was
+        # just updated), then the silent update check.
+        self._maybe_show_whats_new()
+        if self.check_updates:
+            self._check_updates_async(True)
+
+    def _maybe_show_whats_new(self):
+        # The version that last ran is kept in m365gui.ini. A first run just
+        # records it; a NEWER version than last time shows What's new once.
+        last = self._setting("last_version", "")
+        self._save_setting("last_version", APP_VERSION)
+        if (last and self.show_whats_new
+                and self._version_tuple(APP_VERSION) > self._version_tuple(last)):
+            self._log("Updated from " + last + " to " + APP_VERSION + " - showing what's new.")
+            self._show_whats_new(last)
+
+    def _show_whats_new(self, since):
+        # since=None (Help menu): the five newest versions.
+        try:
+            with open(resource_path("CHANGELOG.txt"), encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            text = ""
+        entries = m365_update.changelog_since(text, since or "0", APP_VERSION)
+        if since is None:
+            entries = entries[:5]
+        win = tk.Toplevel(self)
+        win.title(APP_NAME + " - What's new" + (" since " + since if since else ""))
+        win.transient(self)
+        win.geometry("820x560")
+        box = scrolledtext.ScrolledText(win, wrap="word", width=100, height=30)
+        box.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+        box.insert("1.0", m365_update.format_whats_new(entries) if entries else
+                   "The list of changes is not available in this copy. See the "
+                   "Releases page for every version's notes.")
+        box.configure(state="disabled")
+        buttons = ttk.Frame(win)
+        buttons.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Button(buttons, text="All releases on GitHub",
+                   command=lambda: webbrowser.open(UPDATE_RELEASES_URL)).pack(side="left")
+        ttk.Button(buttons, text="Close", command=win.destroy).pack(side="right")
+        ttk.Checkbutton(buttons, text="Show this after every update",
+                        variable=self.whats_new_var,
+                        command=self._toggle_whats_new).pack(side="right", padx=(0, 12))
+
+    def _version_tuple(self, text):
+        # "0.10" > "0.9": compare versions as numbers, not text.
+        parts = []
+        for piece in (text or "").strip().lstrip("vV").split("."):
+            digits = "".join(ch for ch in piece if ch.isdigit())
+            parts.append(int(digits) if digits else 0)
+        return tuple(parts) if parts else (0,)
+
+    def _check_updates_async(self, auto):
+        # On a background thread so a slow network never freezes the window.
+        # auto=True is the silent startup check (says nothing unless there is
+        # an update); False is the menu item (always answers).
+        if self._update_in_progress:
+            return
+        threading.Thread(target=self._check_updates_worker, args=(auto,), daemon=True).start()
+
+    def _check_updates_worker(self, auto):
+        tag, err = "", ""
+        try:
+            request = urllib.request.Request(
+                UPDATE_API_URL, headers={"User-Agent": "M365GUI-Updater",
+                                         "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(request, timeout=12) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            tag = str(data.get("tag_name", "")).strip()
+            if not tag:
+                err = "GitHub did not return a release tag."
+        except Exception as exc:
+            err = str(exc)
+        self.output_queue.put(lambda: self._on_update_check_result(tag, err, auto))
+
+    def _on_update_check_result(self, tag, err, auto):
+        if err or not tag:
+            if not auto:
+                messagebox.showwarning(APP_NAME + " - Update check",
+                                       "Could not check for updates:\n" + (err or "unknown error"))
+            self._log("Update check failed: " + (err or "no tag"))
+            return
+        if self._version_tuple(tag) > self._version_tuple(APP_VERSION):
+            self._prompt_update(tag)
+        else:
+            self._log("Update check: up to date (" + APP_VERSION + ").")
+            if not auto:
+                messagebox.showinfo(APP_NAME + " - Update check",
+                                    "You are on the latest version (" + APP_VERSION + ").")
+
+    def _prompt_update(self, tag):
+        # M365GUI never updates without this explicit yes.
+        self._log("Update available: " + APP_VERSION + " -> " + tag)
+        if messagebox.askyesno(
+                APP_NAME + " - Update available",
+                "A newer version of " + APP_NAME + " is available.\n\n"
+                "    Installed: " + APP_VERSION + "\n    Latest:    " + tag + "\n\n"
+                "Update now? " + APP_NAME + " will close, update itself, and reopen "
+                "when it is done."):
+            self._do_self_update(tag)
+
+    def _do_self_update(self, tag):
+        # Windows: the bundled updatem365gui.ps1 (Setup.exe install -> re-runs
+        # the new Setup.exe, elevated; portable copy -> the zip). macOS /
+        # Linux: m365_update. Both only install a download whose SHA-256
+        # matches the release notes.
+        if self._update_in_progress or self.running_proc is not None:
+            if self.running_proc is not None:
+                messagebox.showinfo(APP_NAME, "A command is running - update after it finishes.")
+            return
+        if sys.platform != "win32":
+            self._self_update_posix(tag)
+            return
+        appdir = app_dir()
+        updater = os.path.join(appdir, "updatem365gui.ps1")
+        if not getattr(sys, "frozen", False) or not os.path.isfile(updater):
+            webbrowser.open(UPDATE_RELEASES_URL)
+            messagebox.showinfo(APP_NAME, "This copy cannot update itself (it runs from "
+                                "source, or the updater is missing), so the Releases "
+                                "page has been opened in your browser instead.")
+            return
+        # Is THIS copy the registered Setup.exe install? Decided from the
+        # registry (an admin can often write to Program Files, so a write
+        # test would wrongly call it portable).
+        reg = registry_exe_install()
+        installed = bool(reg and _same_path(appdir, reg.get("location", "")))
+        try:
+            if installed:
+                # Elevated (UAC) so it can re-run Setup.exe; the installer's
+                # /CLOSEAPPLICATIONS closes this window itself.
+                import ctypes
+                params = ('-ExecutionPolicy Bypass -NoProfile -File "' + updater
+                          + '" -InstallType exe -Launch')
+                rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", "powershell.exe",
+                                                         params, None, 1)
+                if int(rc) <= 32:
+                    messagebox.showwarning(
+                        APP_NAME, "The update needs administrator approval and it was "
+                        "not granted, so nothing was changed. Try again and choose Yes "
+                        "at the Windows prompt, or update by hand from:\n" + UPDATE_RELEASES_URL)
+                    return
+            else:
+                # Portable copy: the updater waits for this window to close,
+                # then replaces the files (keeping m365gui.ini and Logs).
+                inner = ("Start-Sleep -Seconds 3; & '" + updater.replace("'", "''")
+                         + "' -InstallType zip -InstallRoot '" + appdir.replace("'", "''")
+                         + "' -Launch")
+                subprocess.Popen(["powershell", "-ExecutionPolicy", "Bypass", "-NoProfile",
+                                  "-Command", inner],
+                                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, "Could not start the updater:\n" + str(exc)
+                                 + "\n\nYou can update by hand from:\n" + UPDATE_RELEASES_URL)
+            return
+        self._update_in_progress = True
+        self._log("Self-update launched (" + APP_VERSION + " -> " + tag
+                  + (", installer" if installed else ", portable") + ").")
+        self.destroy()
+
+    def _self_update_posix(self, tag):
+        # macOS / Linux: how was THIS copy installed? Then download + verify
+        # the matching release file on a background thread.
+        import platform
+        kind, target = m365_update.install_kind(
+            platform.system(), sys.executable, getattr(sys, "frozen", False),
+            lambda path: os.access(path, os.W_OK))
+        if kind in ("source", "unknown"):
+            webbrowser.open(UPDATE_RELEASES_URL)
+            messagebox.showinfo(APP_NAME, (
+                "This copy is running from source code" if kind == "source" else
+                "M365GUI cannot replace itself here (its folder is not writable by "
+                "your account)") + ", so the Releases page has been opened in your "
+                "browser instead.")
+            return
+        tool = None
+        if kind == "linux-package":
+            tool = next((t for t in ("apt", "dnf", "yum", "zypper") if shutil.which(t)), "rpm")
+        name = m365_update.asset_name(kind, tag, tool)
+        self._update_in_progress = True
+        self._append_output("\n===== UPDATING TO " + tag + " =====\nDownloading " + name + " ...\n")
+        threading.Thread(target=self._posix_update_worker,
+                         args=(tag, kind, target, name, tool), daemon=True).start()
+
+    def _posix_update_worker(self, tag, kind, target, name, tool):
+        # OFF the UI thread: download, check the SHA-256 against the release
+        # notes, unpack, write the swap script. Nothing M365GUI runs from is
+        # touched here - the script does that after M365GUI closes.
+        say = self.output_queue.put
+        try:
+            request = urllib.request.Request(
+                UPDATE_API_URL, headers={"User-Agent": "M365GUI-Updater",
+                                         "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            if str(data.get("tag_name", "")).strip() != tag:
+                raise RuntimeError("the latest release changed while updating - please try again")
+            want = m365_update.published_sha256(data.get("body", ""), name)
+            if not want:
+                raise RuntimeError("the release notes do not list a SHA-256 for " + name
+                                   + " yet (they are added right after each build) - "
+                                   "please try again later")
+            url = next((a.get("browser_download_url") for a in data.get("assets", [])
+                        if a.get("name") == name), None)
+            if not url:
+                raise RuntimeError(name + " is not attached to release " + tag)
+            if kind == "linux-package":
+                work = None
+                folder = os.path.join(os.path.expanduser("~"), "Downloads")
+                os.makedirs(folder, exist_ok=True)
+                path = os.path.join(folder, name)
+            else:
+                work = tempfile.mkdtemp(prefix="m365gui-update-")
+                path = os.path.join(work, name)
+            digest = hashlib.sha256()
+            with urllib.request.urlopen(urllib.request.Request(
+                    url, headers={"User-Agent": "M365GUI-Updater"}), timeout=60) as resp, \
+                    open(path, "wb") as out:
+                size = int(resp.headers.get("Content-Length") or 0)
+                done, shown = 0, 0
+                while True:
+                    chunk = resp.read(1024 * 256)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    digest.update(chunk)
+                    done += len(chunk)
+                    if size and done * 10 // size > shown:
+                        shown = done * 10 // size
+                        say("  %d%%\n" % (shown * 10))
+            if digest.hexdigest().upper() != want:
+                os.remove(path)
+                raise RuntimeError("the download does NOT match the SHA-256 in the "
+                                   "release notes, so it was deleted")
+            say("SHA-256 matches the release notes.\n")
+            if kind == "linux-package":
+                self.output_queue.put(lambda: self._posix_update_package_done(tool, path))
+                return
+            new_root = os.path.join(work, "new")
+            os.makedirs(new_root)
+            log = os.path.join(LOG_DIR, "m365gui-update.log")
+            if kind == "mac-app":
+                # ditto (Apple's tool) keeps the app's links and signature.
+                if subprocess.run(["ditto", "-x", "-k", path, new_root]).returncode:
+                    raise RuntimeError("could not unpack " + name)
+                new_item = next((os.path.join(dirpath, d)
+                                 for dirpath, dirs, _files in os.walk(new_root)
+                                 for d in dirs if d == "M365GUI.app"), None)
+                if not new_item:
+                    raise RuntimeError(name + " does not contain M365GUI.app")
+                script = m365_update.mac_update_script(
+                    os.getpid(), target, new_item, app_dir(), DATA_DIR, work, log, APP_VERSION)
+            else:
+                m365_update.safe_extract_tar(path, new_root)
+                new_item = os.path.join(new_root, "M365GUI")
+                if not os.path.isfile(os.path.join(new_item, "M365GUI")):
+                    raise RuntimeError(name + " does not contain M365GUI/M365GUI")
+                script = m365_update.linux_update_script(
+                    os.getpid(), target, new_item, work, log, APP_VERSION)
+            script_path = os.path.join(work, "update.sh")
+            with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(script)
+            os.chmod(script_path, 0o700)
+            self.output_queue.put(lambda: self._posix_update_launch(script_path, tag))
+        except Exception as exc:
+            message = str(exc)
+            self.output_queue.put(lambda: self._posix_update_failed(message))
+
+    def _posix_update_launch(self, script_path, tag):
+        # The swap script runs in its own session (it outlives M365GUI).
+        self._log("Self-update launched (" + APP_VERSION + " -> " + tag + ", "
+                  + sys.platform + ").")
+        subprocess.Popen(["/bin/bash", script_path], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, close_fds=True)
+        self.destroy()
+
+    def _posix_update_failed(self, message):
+        self._update_in_progress = False
+        self._log("Self-update failed: " + message)
+        if messagebox.askyesno(APP_NAME + " - Update", "The update did not run - " + message
+                               + ".\n\nNothing was changed. Open the Releases page to "
+                               "download it yourself?"):
+            webbrowser.open(UPDATE_RELEASES_URL)
+
+    def _posix_update_package_done(self, tool, path):
+        # .deb / .rpm installs live in /opt (root-owned): M365GUI never asks
+        # for root itself - it hands the admin the one command to run.
+        self._update_in_progress = False
+        command = m365_update.package_command(tool, path)
+        self.clipboard_clear()
+        self.clipboard_append(command)
+        self._append_output("Downloaded and verified: " + path + "\nInstall it with "
+                            "(copied to the clipboard):\n  " + command + "\n")
+        messagebox.showinfo(
+            APP_NAME + " - Update downloaded",
+            "The new version was downloaded and its SHA-256 matches the release notes:\n"
+            + path + "\n\nThis copy was installed as a package, so installing needs your "
+            "password. In a terminal, run (already copied to the clipboard):\n\n"
+            + command + "\n\nThen reopen M365GUI.")
 
 
 if __name__ == "__main__":

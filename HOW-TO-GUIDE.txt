@@ -105,7 +105,12 @@
      the count, then makes you TYPE the word DELETE before it removes anything.
      Type anything else to cancel.
   4. THE STOP BUTTON - halts a running task (it cannot undo what already ran).
-  5. THE LOG - everything is saved to the Logs folder next to the program.
+  5. THE LOG - everything is saved to the Logs folder (next to the program,
+     or for an installed copy in your own user folder - see README.txt).
+  6. UPDATES - when a newer M365GUI exists, it asks "Update now?" at
+     startup. Say Yes and it updates itself and reopens; it only installs a
+     file that matches the checksum published with the release. Help >
+     What's new shows what changed.
 
 
 --------------------------------------------------------------------------------
