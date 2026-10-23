@@ -109,7 +109,9 @@
 
 5. LOG FILES
    Logs\M365GUI_MM-DD-YYYY_HH-MM-SS.log in the settings folder - one per session,
-   with every command and its output. Logs can include user/tenant details;
+   with every command and its output (since v0.9 a password value shows as
+   ******** in the log - before 0.9 it was written as typed: delete older
+   logs if passwords were set with M365GUI). Logs can include user/tenant details;
    keep or purge per your retention practice.
    Logs\OneDrive-Copy_<name>_MM-DD-YYYY_HH-MM-SS.csv - one per OneDrive copy:
    every item copied (type, source path, copied / FAILED, detail). File and

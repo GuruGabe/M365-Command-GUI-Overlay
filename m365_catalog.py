@@ -769,6 +769,18 @@ def script_text(argv, kind, task_name, app_version, date_text):
             "set -euo pipefail\n"
             "m365 %s\n" % (title, app_version, date_text, " ".join(sh_quote(a) for a in argv)))
 
+# ---- passwords never reach a file (v0.9, as GAMGUI's redact_secrets) ----------
+# The session log and the Run-for-each-CSV-row record hold the commands that
+# ran; a password typed into Reset password / Create user / Check a password
+# must not be stored there. The screen still shows the command as typed.
+_SECRET_RE = re.compile(r"(?i)(--(?:new|current)?password(?:\s+|=))(\"[^\"]*\"|'[^']*'|\S+)")
+
+def redact_secrets(text):
+    try:
+        return _SECRET_RE.sub(lambda m_: m_.group(1) + "********", str(text))
+    except Exception:
+        return text                       # never let masking break logging
+
 def task_key(category, name):
     # How Favorites / Recent remember a task: "<section>|<task name>".
     return category + "|" + name

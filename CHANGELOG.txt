@@ -1,6 +1,31 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-23-2026  v0.9  BROWSER VERSION; PASSWORDS NEVER REACH A FILE.
+                  - New m365_web.py: M365GUI in a web browser (like GAMGUI's
+                    gam_web.py), for a computer with no desktop (e.g. Azure
+                    Cloud Shell, a server over SSH) or for anyone who prefers
+                    a browser. Same tasks, search, Favorites / Recent,
+                    "Signed in as", Pick... lists, Save results to (as a
+                    download), Run for each CSV row (upload the CSV), and all
+                    four guided workflows with their questions; the new
+                    password of the compromised-account response opens in its
+                    own window, never in the output.
+                    Run: python3 m365_web.py, then open http://127.0.0.1:8080.
+                    It listens on this computer only, needs a secret token
+                    only its own page knows, accepts JSON only and checks
+                    the Host name; the server builds every command itself
+                    and refuses a destructive task the page did not confirm.
+                  - SECURITY FIX: a password typed into Reset password,
+                    Create user or Check a password was written to the
+                    session log (Logs\M365GUI_*.log) and to the Run for each
+                    CSV row record. Both now show ******** instead; the
+                    window still shows what was typed.
+                  - The Remove ALL guest users workflow moved into
+                    m365_workflows.py so both versions run the same steps
+                    (still: type DELETE to go ahead).
+                  - Tests: tests\test_v09_web.py (a real local server and a
+                    stand-in m365), tests\test_v09_redact.py.
 10-23-2026  v0.8  GUIDED STAFF HAND-OFF AND COMPROMISED ACCOUNT RESPONSE.
                   - Users > Staff hand-off - someone is leaving: saves a
                     record of their groups and licenses first, asks once,

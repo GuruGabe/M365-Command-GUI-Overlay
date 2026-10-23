@@ -3,7 +3,7 @@
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
 # Modified: 10-23-2026
-# Version:  0.8
+# Version:  0.9
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -44,7 +44,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.8"
+APP_VERSION = "0.9"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -284,10 +284,12 @@ from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
                           user_search_commands, people_choices, GROUP_LIST_COMMAND,
                           group_choices, SAVE_CHOICES, SAVE_FORMATS, saves_output,
                           with_output_format, dropdown_start, FORM_VALUE,
-                          bulk_available, bulk_guess_column, bulk_plan, script_text)
+                          bulk_available, bulk_guess_column, bulk_plan, script_text,
+                          redact_secrets)
 from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
-                            staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS)
+                            staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
+                            remove_all_guests)
 
 def random_password(length=16):
     # A new password for a compromised account: letters, digits and symbols
@@ -695,7 +697,8 @@ class M365Gui(tk.Tk):
                     else:
                         failed += 1
                         self.output_queue.put("  row %d FAILED  %s\n          %s\n" % (number, shown, detail))
-                    rows.append([number, "OK" if rc == 0 else "FAILED", shown, detail])
+                    rows.append([number, "OK" if rc == 0 else "FAILED", redact_secrets(shown),
+                                 redact_secrets(detail)])
                 try:
                     os.makedirs(LOG_DIR, exist_ok=True)
                     with open(record, "w", newline="", encoding="utf-8") as handle:
@@ -1115,37 +1118,10 @@ class M365Gui(tk.Tk):
 
         def worker():
             try:
-                self.output_queue.put("\n===== REMOVE ALL GUEST USERS =====\n"
-                                      "Step 1: finding guest accounts...\n")
-                rc, out = self._capture(["entra", "user", "list", "--type", "Guest",
-                                         "--properties", "id,displayName,userPrincipalName",
-                                         "--output", "json"])
-                if rc != 0:
-                    self.output_queue.put("Could not list guests (rc=%d):\n%s\n" % (rc, out)); return
-                try:
-                    guests = json.loads(out) if out.strip() else []
-                except ValueError:
-                    self.output_queue.put("Could not parse the guest list. Raw output:\n" + out + "\n"); return
-                if not guests:
-                    self.output_queue.put("No guest accounts found. Nothing to do.\n"); return
-                for g in guests:
-                    self.output_queue.put("  - %s (%s)\n" % (g.get("displayName", "?"),
-                                                             g.get("userPrincipalName", "?")))
-                if not self._ask_confirm(str(len(guests)) + " guest account(s) will be "
-                                         "DELETED (recoverable 30 days)."):
-                    self.output_queue.put("\n[canceled - nothing deleted]\n"); return
-                self.output_queue.put("\nStep 2: removing...\n")
-                removed = 0
-                for g in guests:
-                    if self.workflow_cancel:
-                        self.output_queue.put("[stopped by user]\n"); break
-                    gid = g.get("id")
-                    rc, out = self._capture(["entra", "user", "remove", "--id", gid, "--force"])
-                    ok = "OK" if rc == 0 else "FAILED (rc=%d)" % rc
-                    self.output_queue.put("  %s %s %s\n" % (ok, g.get("userPrincipalName", gid),
-                                                           "" if rc == 0 else out.strip()[:80]))
-                    if rc == 0: removed += 1
-                self.output_queue.put("\n===== DONE: removed %d of %d =====\n" % (removed, len(guests)))
+                # v0.9: the steps live in m365_workflows (shared with the
+                # browser version); the type-DELETE question stays here.
+                remove_all_guests(self._capture, self.output_queue.put, self._ask_confirm,
+                                  lambda: self.workflow_cancel)
             except Exception as exc:
                 self.output_queue.put("WORKFLOW ERROR: " + str(exc) + "\n")
             finally:
@@ -1204,7 +1180,9 @@ class M365Gui(tk.Tk):
     def _append_output(self, text):
         self.output_box.insert("end", text); self.output_box.see("end")
         try:
-            with open(self.log_path, "a", encoding="utf-8") as h: h.write(text)
+            # v0.9: passwords are masked in the log file (redact_secrets) - the
+            # window still shows the command as typed.
+            with open(self.log_path, "a", encoding="utf-8") as h: h.write(redact_secrets(text))
         except OSError:
             pass
 

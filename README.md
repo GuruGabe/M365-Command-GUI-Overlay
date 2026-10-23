@@ -255,6 +255,30 @@ be careful, but treat it with respect:
 
 ---
 
+## Browser version (0.9)
+
+`m365_web.py` is M365GUI in a web browser - like GAMGUI's `gam_web.py` - for
+a computer with no desktop (Azure Cloud Shell, a server over SSH) or for
+anyone who prefers a browser. It has the same tasks, search, Favorites and
+Recent, Pick... lists, guided workflows and Run for each CSV row (upload the
+CSV); *Save results to* becomes a download.
+
+```bash
+python3 m365_web.py            # then open http://127.0.0.1:8080
+PORT=8081 python3 m365_web.py  # another port
+```
+
+It runs from the source folder (it needs `M365GUI.py`, `m365_catalog.py` and
+`m365_workflows.py` next to it) and uses the `m365` you are signed in to.
+
+**Security:** it listens on this computer only (127.0.0.1); every request
+needs a secret token that only its own page knows, so other web pages cannot
+use it; it accepts JSON only and checks the Host name (DNS rebinding). The
+server builds every command itself and refuses a destructive task the page
+did not confirm. A remote machine: use SSH port forwarding
+(`ssh -L 8080:127.0.0.1:8080 server`), or - when a proxy reaches it under
+another name - list that name in `M365WEB_ALLOWED_HOSTS` (comma separated).
+
 ## Running and building from source (Windows, macOS, Linux)
 
 M365GUI is a single Python file (`M365GUI.py`) using only the standard library
@@ -362,7 +386,8 @@ xattr -dr com.apple.quarantine dist/M365GUI
 |------|---------|
 | `M365GUI.py` | The application window (standard library only) |
 | `m365_catalog.py` | The task catalog and command builder, plus search, Pick..., CSV-row and script helpers |
-| `m365_workflows.py` | Guided workflows (the OneDrive copy) |
+| `m365_workflows.py` | Guided workflows (OneDrive copy, staff hand-off, compromised account, remove all guests) |
+| `m365_web.py` | The browser version |
 | `m365_update.py` | macOS / Linux in-app updater and What's new (from GAMGUI) |
 | `updatem365gui.ps1` | Windows updater (shipped inside the Windows builds) |
 | `installer\` | Inno Setup script (Windows Setup.exe), DMG and deb/rpm build scripts |

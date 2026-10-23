@@ -42,6 +42,17 @@ before adding it.
 
 ## Session log
 
+- 10-23-2026 (v0.9): m365_web.py browser version (127.0.0.1, session token
+  header, JSON-only POSTs, Host allow-list + M365WEB_ALLOWED_HOSTS; the server
+  rebuilds commands from form values and refuses unconfirmed destructive
+  tasks; jobs polled via /api/job; workflow questions via /api/job/answer;
+  the secret is handed over once then forgotten; uploads only under
+  DATA_DIR/Uploads, deleted after 7 days). Clicked through in the built-in
+  browser with a stand-in m365. remove_all_guests moved to m365_workflows.
+  SECURITY: passwords were written to the session log and the bulk record -
+  now masked (m365_catalog.redact_secrets). Tests: test_v09_web.py (28),
+  test_v09_redact.py.
+
 - 10-23-2026 (v0.8): guided Staff hand-off (record -> ask -> block -> sign out
   -> OneDrive copy (reuses transfer_onedrive) -> auto-reply -> groups ->
   licenses) and Compromised account response (block, sign out, random

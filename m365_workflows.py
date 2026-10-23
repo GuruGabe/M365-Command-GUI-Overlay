@@ -509,3 +509,46 @@ def compromised_response(run, out, confirm, cancelled, values, records_base, sho
     out("===== DONE: %d step(s), %d not OK. Evidence: %s =====\n"
         % (len(steps.rows) - 1, failed, folder))
     return result
+
+# =============================================================================
+# SECTION: Remove ALL guest users (v0.2; moved here from the window in v0.9 so
+#   the browser version runs the same steps). confirm_delete(summary) must
+#   only return True when the person TYPED the word DELETE.
+# =============================================================================
+
+def remove_all_guests(run, out, confirm_delete, cancelled):
+    result = {"ok": False, "removed": 0, "found": 0}
+    out("\n===== REMOVE ALL GUEST USERS =====\nStep 1: finding guest accounts...\n")
+    rc, text = run(["entra", "user", "list", "--type", "Guest",
+                    "--properties", "id,displayName,userPrincipalName", "--output", "json"])
+    if rc != 0:
+        out("Could not list guests (rc=%d):\n%s\n" % (rc, text))
+        return result
+    guests = parse_json(text) if text.strip() else []
+    if not isinstance(guests, list):
+        out("Could not read the guest list. Raw output:\n" + text + "\n")
+        return result
+    result["found"] = len(guests)
+    if not guests:
+        out("No guest accounts found. Nothing to do.\n")
+        result["ok"] = True
+        return result
+    for g in guests:
+        out("  - %s (%s)\n" % (g.get("displayName", "?"), g.get("userPrincipalName", "?")))
+    if not confirm_delete(str(len(guests)) + " guest account(s) will be DELETED (recoverable 30 days)."):
+        out("\n[canceled - nothing deleted]\n")
+        return result
+    out("\nStep 2: removing...\n")
+    for g in guests:
+        if cancelled():
+            out("[stopped by user]\n")
+            break
+        gid = g.get("id")
+        rc, text = run(["entra", "user", "remove", "--id", gid, "--force"])
+        out("  %s %s %s\n" % ("OK" if rc == 0 else "FAILED (rc=%d)" % rc,
+                              g.get("userPrincipalName", gid), "" if rc == 0 else text.strip()[:80]))
+        if rc == 0:
+            result["removed"] += 1
+    out("\n===== DONE: removed %d of %d =====\n" % (result["removed"], len(guests)))
+    result["ok"] = result["removed"] == len(guests)
+    return result
