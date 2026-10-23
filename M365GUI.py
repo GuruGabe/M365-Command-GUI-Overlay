@@ -2,8 +2,8 @@
 # Script:   M365GUI.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
-# Modified: 10-22-2026
-# Version:  0.4
+# Modified: 10-23-2026
+# Version:  0.6
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -32,7 +32,6 @@ import queue
 import re
 import json
 import csv
-import urllib.parse
 import datetime
 import configparser
 import hashlib                 # SHA-256 check of update downloads
@@ -45,7 +44,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.5"
+APP_VERSION = "0.6"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -235,481 +234,57 @@ def build_invocation(exe, argv):
 DATA_DIR = data_dir()
 INI_PATH = os.path.join(DATA_DIR, "m365gui.ini")
 LOG_DIR = os.path.join(DATA_DIR, "Logs")
+# Favorites and Recent tasks (v0.6) - their own small JSON file, as in GAMGUI
+# (task names can hold characters the .ini reader treats specially).
+TASKLISTS_PATH = os.path.join(DATA_DIR, "m365gui_tasklists.json")
+RECENT_MAX = 10
 
-# =============================================================================
-# SECTION: Task catalog (all commands verified against m365 v11 --help)
-#   template uses "--flag {value}" style; {placeholders} fill from the form,
-#   [bracketed] parts drop when blank, bare flags (--force) are literal.
-# =============================================================================
-
-def T(name, desc, template, fields, destructive=False, workflow=""):
-    return {"name": name, "desc": desc, "template": template,
-            "fields": fields, "destructive": destructive, "workflow": workflow}
-
-def F(label, key, required=True, choices=None, default=""):
-    return {"label": label, "key": key, "required": required,
-            "choices": choices, "default": default}
-
-# The 'Afterwards' choices of the OneDrive copy (see transfer_onedrive).
-TRANSFER_ACCESS_REMOVE = "Remove my temporary access when done"
-TRANSFER_ACCESS_KEEP = "Keep my access to both OneDrives"
-
-TASKS = {
- "Users (Entra ID)": [
-  T("List users", "Lists all users in the directory.",
-    "entra user list --output text", []),
-  T("List guest users", "Lists only external / guest accounts.",
-    "entra user list --type Guest --output text", []),
-  T("Get user info", "Shows the details of one user, found by their UPN.",
-    "entra user get --userName {email} --output text",
-    [F("User (UPN) e.g. jdoe@contoso.com", "email")]),
-  T("Create user",
-    "Creates a new member account. Set the usage location so the account can "
-    "be licensed later.",
-    "entra user add --displayName {display} --userName {email} --password {password} [--usageLocation {loc}]",
-    [F("Display name e.g. John Doe", "display"),
-     F("User (UPN) e.g. jdoe@contoso.com", "email"),
-     F("Initial password", "password"),
-     F("Usage location e.g. US (optional)", "loc", False)]),
-  T("Reset password",
-    "Sets a new password and forces a change at next sign-in.",
-    "entra user set --userName {email} --resetPassword --newPassword {password} --forceChangePasswordNextSignIn",
-    [F("User (UPN)", "email"), F("New password", "password")]),
-  T("Rename user (display / first / last name)",
-    "Changes the user's names. The sign-in name (UPN) does not change.",
-    "entra user set --userName {email} [--displayName {display}] [--firstName {first}] [--lastName {last}]",
-    [F("User (UPN)", "email"), F("New display name (optional)", "display", False),
-     F("New first name (optional)", "first", False),
-     F("New last name (optional)", "last", False)]),
-  T("Set usage location",
-    "Sets the country the account is used from (required before assigning "
-    "licenses).",
-    "entra user set --userName {email} --usageLocation {loc}",
-    [F("User (UPN)", "email"), F("Usage location e.g. US", "loc")]),
-  T("Block sign-in",
-    "Disables the account so the user cannot sign in; keeps the account/data.",
-    "entra user set --userName {email} --accountEnabled false",
-    [F("User (UPN)", "email")]),
-  T("Unblock sign-in", "Re-enables a blocked account.",
-    "entra user set --userName {email} --accountEnabled true",
-    [F("User (UPN)", "email")]),
-  T("Delete user (DESTRUCTIVE)",
-    "Deletes the account (recoverable from the Entra recycle bin for 30 days).",
-    "entra user remove --userName {email} --force",
-    [F("User (UPN)", "email")], destructive=True),
-  T("List deleted users (recycle bin)",
-    "Lists users that were deleted within the last 30 days.",
-    "entra user recyclebinitem list --output text", []),
-  T("Restore deleted user",
-    "Restores a soft-deleted user by their object id (from the recycle bin "
-    "list).",
-    "entra user recyclebinitem restore --id {id}",
-    [F("User object id (from recycle bin list)", "id")]),
-  T("Remove ALL guest users (DESTRUCTIVE)",
-    "Finds every guest account, shows you the count, asks you to type DELETE, "
-    "then removes them one by one. Nothing is deleted until you confirm.",
-    "", [], destructive=True, workflow="remove_guests"),
- ],
- "Groups (Entra)": [
-  T("List groups", "Lists all groups in the directory.",
-    "entra group list --output text", []),
-  T("List groups by type", "Lists only Microsoft 365 groups or security groups.",
-    "entra group list --type {type} --output text",
-    [F("Type", "type", choices=["microsoft365", "security"])]),
-  T("Get group info", "Shows the details of one group, found by its name.",
-    "entra group get --displayName {name} --output text",
-    [F("Group display name", "name")]),
-  T("Create group",
-    "Creates a Microsoft 365 or security group.",
-    "entra group add --displayName {name} --type {type} [--mailNickname {nick}] [--description {desc}]",
-    [F("Group display name", "name"),
-     F("Type", "type", choices=["microsoft365", "security"]),
-     F("Mail nickname (M365 groups) e.g. sales (optional)", "nick", False),
-     F("Description (optional)", "desc", False)]),
-  T("List group members", "Lists the members of a group.",
-    "entra group member list --groupName {name} --output text",
-    [F("Group display name", "name")]),
-  T("Add member to group", "Adds a user to a group with the chosen role.",
-    "entra group member add --groupName {name} --userNames {email} --role {role}",
-    [F("Group display name", "name"), F("User (UPN)", "email"),
-     F("Role", "role", choices=["Member", "Owner"])]),
-  T("Remove member from group (DESTRUCTIVE)", "Removes a user from a group.",
-    "entra group member remove --groupName {name} --userNames {email} --force",
-    [F("Group display name", "name"), F("User (UPN)", "email")],
-    destructive=True),
-  T("Delete group (DESTRUCTIVE)", "Deletes a group (not its members' accounts).",
-    "entra group remove --displayName {name} --force",
-    [F("Group display name", "name")], destructive=True),
- ],
- "Licenses": [
-  T("View all licenses (tenant SKUs)",
-    "Lists the license SKUs your tenant owns, with used/total counts and each "
-    "SKU's id (needed for the tasks below).",
-    "entra license list --output text", []),
-  T("List users with a specific license",
-    "Lists every user assigned a given license. Get the SKU id from 'View all "
-    "licenses' (the skuId GUID).",
-    "entra user list --properties \"displayName,userPrincipalName,assignedLicenses\" "
-    "--query \"[?assignedLicenses[?skuId=='{skuId}']].{displayName:displayName,userPrincipalName:userPrincipalName}\" --output text",
-    [F("License SKU id (GUID, from View all licenses)", "skuId")]),
-  T("Assign license(s)",
-    "Assigns one or more license SKUs (comma-separated ids) to a user. The "
-    "user must have a usage location set.",
-    "entra user license add --userName {email} --ids {ids}",
-    [F("User (UPN)", "email"), F("License SKU id(s), comma-separated", "ids")]),
-  T("Remove license(s) (DESTRUCTIVE)",
-    "Removes one or more license SKUs from a user.",
-    "entra user license remove --userName {email} --ids {ids} --force",
-    [F("User (UPN)", "email"), F("License SKU id(s), comma-separated", "ids")],
-    destructive=True),
- ],
- "Teams / M365 Groups": [
-  T("Add member to a Team",
-    "Adds a user to a Microsoft Team (M365 group) as Member or Owner.",
-    "entra m365group user add --teamName {team} --userNames {email} --role {role}",
-    [F("Team display name e.g. Engineering", "team"), F("User (UPN)", "email"),
-     F("Role", "role", choices=["Member", "Owner"])]),
- ],
- "SharePoint": [
-  T("List sites", "Lists SharePoint sites in the tenant.",
-    "spo site list --output text", []),
-  T("Add user to a SharePoint group",
-    "Adds a user to a SharePoint group on a specific site.",
-    "spo group member add --webUrl {url} --groupName {group} --userNames {email}",
-    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
-     F("SharePoint group name", "group"), F("User (UPN)", "email")]),
- ],
- "Security": [
-  T("Sign user out everywhere",
-    "Revokes all sign-in sessions for the user - first move on a compromised "
-    "account (they must sign in again).",
-    "entra user session revoke --userName {email} --force",
-    [F("User (UPN)", "email")], destructive=True),
-  T("Sign-in activity",
-    "Lists recent sign-ins for a user. REQUIRES the AuditLog.Read.All Graph "
-    "permission AND a Microsoft Entra ID P1/P2 (premium) tenant - sign-in logs "
-    "are a premium feature. If it fails with 'Error: [object Object]', that is "
-    "the CLI hiding the real message; re-run the command with --debug (or add "
-    "--verbose in Custom command) to see the actual reason.",
-    "entra user signin list --userName {email} --output text",
-    [F("User (UPN)", "email")]),
- ],
- "OneDrive": [
-  T("Find a user's OneDrive address",
-    "Shows the web address of a user's OneDrive (empty if their OneDrive has "
-    "never been set up - it is created the first time they open it).",
-    "entra user get --userName {email} --properties userPrincipalName,mySite --output text",
-    [F("User (UPN)", "email")]),
-  T("Copy a user's OneDrive files to another user",
-    "For a person who is leaving: copies EVERYTHING in their OneDrive into a "
-    "new folder in another person's OneDrive (e.g. their manager). Nothing "
-    "is removed from the original owner, and files with the same name are "
-    "renamed, never overwritten. Shows the file count and asks before "
-    "copying; afterwards counts the files that arrived and saves a CSV "
-    "record in the Logs folder. You need to be a SharePoint or Global "
-    "administrator: M365GUI gives you access to both OneDrives for the copy "
-    "and takes it away again afterwards (unless you choose to keep it).",
-    "", [F("From: whose files (UPN) e.g. jdoe@contoso.com", "from"),
-         F("To: who gets a copy (UPN) e.g. manager@contoso.com", "to"),
-         F("Folder name in their OneDrive (optional - default 'Files from <name> <date>')",
-           "folder", False),
-         F("Afterwards", "access", choices=[TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP])],
-    workflow="onedrive_transfer"),
- ],
- "Diagnostics": [
-  T("Login status", "Shows whether the CLI is signed in and to which tenant.",
-    "status", []),
-  T("CLI version", "Shows the CLI for Microsoft 365 version.", "version", []),
-  T("Tenant ID", "Shows the tenant's directory (tenant) id.",
-    "tenant id get", []),
- ],
-}
-
-# What the preview box says for a guided workflow (it runs several commands).
-WORKFLOW_PLANS = {
-    "remove_guests": "Workflow: list guests -> confirm (type DELETE) -> remove each. "
-                     "Click Run to start.",
-    "onedrive_transfer": "Workflow: find both OneDrives -> give you temporary access -> "
-                         "count the files -> ask you -> copy into the new folder -> "
-                         "count what arrived -> remove the temporary access. Click Run "
-                         "to start.",
-}
-
-# =============================================================================
-# SECTION: Command building (same engine as GAMGUI)
-# =============================================================================
-
-def quote_if_needed(value):
-    value = value.strip()
-    if value.startswith('"') and value.endswith('"') and len(value) > 1:
-        return value
-    if " " in value or '"' in value:
-        return '"' + value.replace('"', '\\"') + '"'
-    return value
-
-def build_command(task, values):
-    template = task["template"]
-
-    def seg_sub(match):
-        segment = match.group(0)[1:-1]
-        keys = re.findall(r"{(\w+)[^}]*}", segment)
-        if any(values.get(k, "").strip() for k in keys):
-            return segment
-        return ""
-    # Optional segments are flag groups like [--usageLocation {loc}]. The
-    # pattern requires the segment to begin with "--" so it does NOT collide
-    # with literal JMESPath brackets in a --query value, e.g.
-    # [?assignedLicenses[?skuId=='...']].
-    rendered = re.sub(r"\[--[^\]]*\]", seg_sub, template)
-
-    argv, display_parts, problem = [], [], [""]
-
-    def fill(m):
-        key, fallback = m.group(1), m.group(2) or ""
-        v = values.get(key, "").strip()
-        if not v:
-            if fallback:
-                v = fallback
-            else:
-                problem[0] = "Missing required value: " + key
-        return v
-
-    # Split on whitespace but keep quoted "..." segments together so that
-    # options like --properties "a,b,c" stay a single argument.
-    for token in re.findall(r'"[^"]*"|\S+', rendered):
-        filled = re.sub(r"{(\w+)(?:\|([^}]*))?}", fill, token)
-        if problem[0]:
-            return "", [], problem[0]
-        if filled.startswith('"') and filled.endswith('"') and len(filled) > 1:
-            inner = filled[1:-1]
-            argv.append(inner)
-            display_parts.append(quote_if_needed(inner))
-        else:
-            argv.append(filled)
-            display_parts.append(quote_if_needed(filled))
-    return " ".join(display_parts), argv, ""
-
-# =============================================================================
-# SECTION: OneDrive transfer - copy one user's OneDrive files to another user
-#   (v0.4). Copies; never removes anything from the original owner. Built
-#   only from commands checked with 'm365 <command> --help' on CLI v11.11.
-#   The signed-in admin needs site collection admin rights on BOTH OneDrives
-#   to read and write them: M365GUI adds them for the run (SharePoint admin
-#   center, --asAdmin) and removes again only what it added.
-# =============================================================================
-
-BAD_FOLDER_CHARS = set('"*:<>?/\\|')
-
-def parse_json(text):
-    # m365 prints JSON, sometimes after a line of plain text. Read from the
-    # first [ or {. None when there is no JSON.
-    text = (text or "").strip()
-    for i, ch in enumerate(text):
-        if ch in "[{":
-            try:
-                return json.loads(text[i:])
-            except ValueError:
-                return None
-    return None
-
-def onedrive_paths(my_site):
-    # A OneDrive address (Graph 'mySite', e.g. https://contoso-my.sharepoint
-    # .com/personal/jdoe_contoso_com/) -> (site URL, host, server-relative
-    # path of its document library). The library's URL is always
-    # 'Documents', whatever language the OneDrive shows it in.
-    web = my_site.strip().rstrip("/")
-    parts = urllib.parse.urlsplit(web)
-    return web, parts.scheme + "://" + parts.netloc, parts.path + "/Documents"
-
-def default_transfer_folder(src_upn):
-    # The folder the files land in, in the recipient's OneDrive.
-    return "Files from %s %s" % (src_upn.split("@")[0],
-                                 datetime.date.today().strftime("%m-%d-%Y"))
-
-def size_text(n):
-    for unit in ("bytes", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return ("%d %s" % (n, unit)) if unit == "bytes" else ("%.1f %s" % (n, unit))
-        n /= 1024.0
-
-def _is_site_admin(admins, upn):
-    upn = upn.lower()
-    return any((a.get("Email") or "").lower() == upn
-               or (a.get("LoginName") or "").lower().endswith("|" + upn) for a in admins)
-
-def transfer_onedrive(run, out, confirm, cancelled, values, report_path):
-    # run(argv) -> (returncode, text): one m365 command.
-    # out(text): progress for the window and the log.
-    # confirm(text) -> True/False: the one question before anything is copied.
-    # cancelled() -> True after Stop.
-    # report_path: where the CSV record of every copy is written.
-    # Returns a summary dict (ok, error, copied, failed, src_files, dst_files).
-    result = {"ok": False, "error": "", "copied": 0, "failed": 0,
-              "src_files": 0, "dst_files": 0}
-    src_upn = (values.get("from") or "").strip()
-    dst_upn = (values.get("to") or "").strip()
-    folder = (values.get("folder") or "").strip() or default_transfer_folder(src_upn)
-    keep_access = values.get("access") == TRANSFER_ACCESS_KEEP
-
-    def stop(message):
-        result["error"] = message
-        out("\n" + message + "\n")
-        return result
-
-    # ---- 1. check the boxes before running anything ----------------------------
-    for label, upn in (("From", src_upn), ("To", dst_upn)):
-        if "@" not in upn or " " in upn:
-            return stop("The %s box needs a sign-in name (UPN) such as jdoe@contoso.com." % label)
-    if src_upn.lower() == dst_upn.lower():
-        return stop("From and To are the same person - nothing to copy.")
-    if BAD_FOLDER_CHARS & set(folder) or folder.endswith("."):
-        return stop('The folder name cannot contain " * : < > ? / \\ | or end with a period.')
-
-    out("\n===== COPY ONEDRIVE FILES: %s -> %s =====\n" % (src_upn, dst_upn))
-    rc, text = run(["status", "--output", "json"])
-    operator = (parse_json(text) or {}).get("connectedAs", "") if rc == 0 else ""
-    if not operator:
-        return stop("m365 is not signed in. Run 'm365 login' first.")
-
-    # ---- 2. find both OneDrives -------------------------------------------------
-    sites = {}
-    for upn in (src_upn, dst_upn):
-        rc, text = run(["entra", "user", "get", "--userName", upn,
-                        "--properties", "userPrincipalName,mySite", "--output", "json"])
-        info = parse_json(text) if rc == 0 else None
-        if not isinstance(info, dict):
-            return stop("Could not find %s: %s" % (upn, text.strip()[:300]))
-        if not info.get("mySite"):
-            return stop("%s has no OneDrive yet - it is created the first time they open "
-                        "OneDrive (or when an admin pre-provisions it)." % upn)
-        sites[upn] = onedrive_paths(info["mySite"])
-    src_web, src_host, src_lib = sites[src_upn]
-    dst_web, dst_host, dst_lib = sites[dst_upn]
-    out("From: %s\nTo:   %s\n" % (src_web, dst_web))
-
-    added = []                                    # sites where WE added access
+def save_results(path, text):
+    # Writes a command's CSV / JSON output to the chosen file and returns the
+    # line for the output window (never raises).
     try:
-        # ---- 3. access: site collection admin on both, for this run --------------
-        for web in (src_web, dst_web):
-            rc, text = run(["spo", "site", "admin", "list", "--siteUrl", web, "--asAdmin",
-                            "--output", "json"])
-            admins = parse_json(text) if rc == 0 else None
-            if not isinstance(admins, list):
-                return stop("Could not read who can manage %s: %s\nCopying needs a SharePoint "
-                            "administrator (or Global administrator) signed in to m365, with "
-                            "SharePoint access for the CLI's sign-in." % (web, text.strip()[:300]))
-            if not _is_site_admin(admins, operator):
-                rc, text = run(["spo", "site", "admin", "add", "--siteUrl", web,
-                                "--userName", operator, "--asAdmin", "--output", "json"])
-                if rc != 0:
-                    return stop("Could not give %s access to %s: %s" % (operator, web, text.strip()[:300]))
-                added.append(web)
-                out("Gave %s temporary access to %s\n" % (operator, web))
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+    except OSError as exc:
+        return "Could not save the results to %s: %s\n" % (path, exc)
+    rows = text.count("\n")
+    return "Saved to %s (%d line%s).\n" % (path, rows, "" if rows == 1 else "s")
 
-        # ---- 4. what is there to copy --------------------------------------------
-        hidden = src_lib + "/Forms"               # the library's own page files
-        out("Counting %s's files - on a large OneDrive this can take 10 minutes or "
-            "more...\n" % src_upn)
-        rc, text = run(["spo", "file", "list", "--webUrl", src_web, "--folderUrl", src_lib,
-                        "--recursive", "--fields", "Name,ServerRelativeUrl,Length",
-                        "--output", "json"])
-        every = parse_json(text) if rc == 0 else None
-        if not isinstance(every, list):
-            return stop("Could not list %s's files: %s" % (src_upn, text.strip()[:300]))
-        every = [f for f in every
-                 if not (f.get("ServerRelativeUrl") or "").startswith(hidden + "/")]
-        result["src_files"] = len(every)
-        total = sum(int(f.get("Length") or 0) for f in every)
-        rc, text = run(["spo", "folder", "list", "--webUrl", src_web, "--parentFolderUrl", src_lib,
-                        "--fields", "Name,ServerRelativeUrl", "--output", "json"])
-        folders = parse_json(text) if rc == 0 else None
-        rc2, text2 = run(["spo", "file", "list", "--webUrl", src_web, "--folderUrl", src_lib,
-                          "--fields", "Name,ServerRelativeUrl", "--output", "json"])
-        files = parse_json(text2) if rc2 == 0 else None
-        if not isinstance(folders, list) or not isinstance(files, list):
-            return stop("Could not list the top of %s's OneDrive: %s" % (src_upn, (text + text2).strip()[:300]))
-        folders = [f for f in folders if f.get("Name") != "Forms"]
-        items = ([("folder", f["ServerRelativeUrl"]) for f in folders] +
-                 [("file", f["ServerRelativeUrl"]) for f in files])
-        if not items:
-            return stop("%s's OneDrive is empty - nothing to copy." % src_upn)
+def account_text(m365_path, run):
+    # The top bar's "Signed in as" text, from 'm365 status' (run(argv) ->
+    # (returncode, output)). Never raises.
+    if not m365_path:
+        return "Signed in as: (m365 not found)"
+    try:
+        rc, out = run(["status", "--output", "json"])
+    except Exception as exc:
+        return "Signed in as: (could not check: %s)" % exc
+    start = out.find("{")
+    try:
+        info = json.loads(out[start:]) if start >= 0 else {}
+    except ValueError:
+        info = {}
+    who = info.get("connectedAs") if isinstance(info, dict) else None
+    if who:
+        return "Signed in as: " + who
+    if "logged out" in out.lower() or "not logged" in out.lower():
+        return "Signed in as: nobody - run 'm365 login'"
+    if "node" in out.lower() and ("not recognized" in out.lower() or "not found" in out.lower()):
+        return "Signed in as: (Node.js is not installed - m365 cannot run)"
+    return "Signed in as: (unknown - " + (" ".join(out.split())[:60] or "no answer") + ")"
 
-        question = ("Copy %d files (%s) in %d folders and %d loose files\n"
-                    "FROM %s's OneDrive\nTO a new folder '%s' in %s's OneDrive?\n\n"
-                    "Nothing is removed from %s. Files with the same name are renamed, "
-                    "never overwritten." % (len(every), size_text(total), len(folders), len(files),
-                                            src_upn, folder, dst_upn, src_upn))
-        out(question + "\n")
-        if not confirm(question):
-            return stop("Canceled - nothing was copied.")
-
-        # ---- 5. the destination folder, then copy --------------------------------
-        rc, text = run(["spo", "folder", "add", "--webUrl", dst_web, "--parentFolderUrl", dst_lib,
-                        "--name", folder, "--output", "json"])
-        made = parse_json(text) if rc == 0 else None
-        if not isinstance(made, dict):
-            return stop("Could not create the folder '%s' in %s's OneDrive: %s"
-                        % (folder, dst_upn, text.strip()[:300]))
-        target_srv = made.get("ServerRelativeUrl") or (dst_lib + "/" + folder)
-        target = dst_host + target_srv
-        out("Copying into %s ...\n" % target)
-        rows = [["type", "source", "result", "detail"]]
-        for kind, source in items:
-            if cancelled():
-                out("[Stopped - the rest was not copied.]\n")
-                break
-            argv = ["spo", kind, "copy", "--webUrl", src_web, "--sourceUrl", source,
-                    "--targetUrl", target, "--nameConflictBehavior", "rename"]
-            if kind == "file":
-                argv.append("--bypassSharedLock")   # a file left open still copies
-            rc, text = run(argv + ["--output", "json"])
-            name = source[len(src_lib) + 1:]
-            if rc == 0:
-                result["copied"] += 1
-                out("  OK      %s %s\n" % (kind, name))
-                rows.append([kind, source, "copied", ""])
-            else:
-                result["failed"] += 1
-                detail = " ".join(text.split())[:200]
-                out("  FAILED  %s %s - %s\n" % (kind, name, detail))
-                rows.append([kind, source, "FAILED", detail])
-        try:
-            with open(report_path, "w", newline="", encoding="utf-8") as h:
-                csv.writer(h).writerows(rows)
-            out("Record of every copy: %s\n" % report_path)
-        except OSError as exc:
-            out("Could not save the record %s: %s\n" % (report_path, exc))
-
-        # ---- 6. check: count the files that arrived -------------------------------
-        out("Counting the files that arrived...\n")
-        rc, text = run(["spo", "file", "list", "--webUrl", dst_web, "--folderUrl", target_srv,
-                        "--recursive", "--fields", "Name,ServerRelativeUrl,Length", "--output", "json"])
-        landed = parse_json(text) if rc == 0 else None
-        if isinstance(landed, list):
-            result["dst_files"] = len(landed)
-            out("Check: %d of %d files are in the new folder (%s of %s).\n"
-                % (len(landed), len(every), size_text(sum(int(f.get("Length") or 0) for f in landed)),
-                   size_text(total)))
-            if len(landed) < len(every):
-                out("WARNING: some files did not arrive - see FAILED lines above, or run the "
-                    "copy again into a new folder for the rest.\n")
-        else:
-            out("Could not count the copied files: %s\n" % text.strip()[:300])
-        result["ok"] = result["failed"] == 0 and not cancelled()
-        out("\n===== DONE: %d copied, %d failed =====\n" % (result["copied"], result["failed"]))
-        return result
-    finally:
-        # ---- 7. take back only the access this run added --------------------------
-        if keep_access:
-            for web in added:
-                out("Your access to %s was KEPT (as chosen).\n" % web)
-        else:
-            for web in added:
-                rc, text = run(["spo", "site", "admin", "remove", "--siteUrl", web,
-                                "--userName", operator, "--asAdmin", "--force", "--output", "json"])
-                out(("Removed your temporary access to %s\n" % web) if rc == 0 else
-                    ("COULD NOT remove your access to %s - remove it in the SharePoint admin "
-                     "center: %s\n" % (web, text.strip()[:200])))
+# The task catalog and the guided workflows live in their own modules (v0.6,
+# like GAMGUI). These names are re-exported here: the tests and older code
+# use them as M365GUI.<name>.
+from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
+                          TASKS, WORKFLOW_PLANS, quote_if_needed, build_command,
+                          task_key, find_task, task_matches, picker_kind,
+                          user_search_commands, people_choices, GROUP_LIST_COMMAND,
+                          group_choices, SAVE_CHOICES, SAVE_FORMATS, saves_output,
+                          with_output_format, dropdown_start, FORM_VALUE,
+                          bulk_available, bulk_guess_column, bulk_plan, script_text)
+from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
+                            default_transfer_folder, size_text, transfer_onedrive)
 
 # =============================================================================
 # SECTION: Main window
@@ -743,6 +318,8 @@ class M365Gui(tk.Tk):
         self.check_updates = self._setting("check_updates", "true") == "true"
         self.show_whats_new = self._setting("show_whats_new", "true") == "true"
         self._update_in_progress = False
+        self.favorites, self.recent = self._load_tasklists()
+        self._group_cache = None             # the Pick... group list, loaded once
 
         self._build_layout()
         self._build_menu()
@@ -750,6 +327,7 @@ class M365Gui(tk.Tk):
         self._preselect()
         self.after(100, self._poll_output)
         self.after(1500, self._startup_checks)
+        self._refresh_account()
         if not self.m365_path:
             self._append_output(
                 "NOTE: the 'm365' CLI was not found. Install it with\n"
@@ -766,11 +344,31 @@ class M365Gui(tk.Tk):
         self.path_label = ttk.Label(top, text="m365: " + (self.m365_path or "(not found)"))
         self.path_label.pack(side="left")
         ttk.Button(top, text="Locate m365...", command=self._locate).pack(side="right")
+        # v0.6 (GAMGUI's "signs in as" line): which account m365 is signed in
+        # as, checked in the background at startup. Click it to check again.
+        self.account_label = ttk.Label(top, text="Signed in as: (checking...)",
+                                       cursor="hand2")
+        self.account_label.pack(side="right", padx=12)
+        self.account_label.bind("<Button-1>", lambda _e: self._refresh_account())
 
         main = ttk.PanedWindow(self, orient="horizontal"); main.pack(fill="both", expand=True)
-        self.tree = ttk.Treeview(main, show="tree", selectmode="browse")
+        left = ttk.Frame(main)
+        # Search box: every word typed must appear in the section, task name
+        # or description (m365_catalog.task_matches). Esc clears it.
+        search_row = ttk.Frame(left); search_row.pack(fill="x", pady=(0, 4))
+        ttk.Label(search_row, text="Search:").pack(side="left")
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_row, textvariable=self.search_var)
+        self.search_entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        self.search_entry.bind("<Escape>", lambda _e: self.search_var.set(""))
+        self.search_var.trace_add("write", lambda *_: self._populate_tree())
+        self.tree = ttk.Treeview(left, show="tree", selectmode="browse")
+        self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
-        main.add(self.tree, weight=1)
+        # Right-click (Ctrl-click on a Mac) a task: add to / remove from Favorites.
+        for event in ("<Button-3>", "<Button-2>", "<Control-Button-1>"):
+            self.tree.bind(event, self._tree_menu)
+        main.add(left, weight=1)
 
         right = ttk.Frame(main, padding=6); main.add(right, weight=3)
         self.desc_label = ttk.Label(right, text="Select a task on the left.",
@@ -782,20 +380,373 @@ class M365Gui(tk.Tk):
         ttk.Label(pv, text="Command preview (editable):").pack(side="left")
         ttk.Button(pv, text="Build", command=self._preview).pack(side="right")
         ttk.Button(pv, text="Copy", command=self._copy).pack(side="right")
+        ttk.Button(pv, text="Save as script...", command=self._save_script).pack(side="right", padx=4)
         self.preview_box = tk.Text(right, height=3, wrap="word"); self.preview_box.pack(fill="x", pady=4)
 
         rb = ttk.Frame(right); rb.pack(fill="x")
         self.run_button = ttk.Button(rb, text="Run", command=self._run); self.run_button.pack(side="left")
         ttk.Button(rb, text="Stop", command=self._stop).pack(side="left", padx=4)
+        # v0.6: run the open task once per row of a CSV file (as GAMGUI).
+        self.bulk_button = ttk.Button(rb, text="Run for each CSV row...", command=self._bulk_dialog)
+        self.bulk_button.pack(side="left", padx=4)
         ttk.Button(rb, text="Clear output", command=lambda: self.output_box.delete("1.0", "end")).pack(side="right")
         self.output_box = scrolledtext.ScrolledText(right, height=18, wrap="word"); self.output_box.pack(fill="both", expand=True, pady=4)
 
     def _populate_tree(self):
+        # (Re)draws the task list: Favorites and Recent at the top, then every
+        # section. With search words, only matching tasks show, sections open.
+        needle = self.search_var.get().strip() if hasattr(self, "search_var") else ""
+        self.tree.delete(*self.tree.get_children(""))
+        for title, keys in (("Favorites", self.favorites), ("Recent", self.recent)):
+            found = [(k, find_task(k)) for k in keys]
+            found = [(k, hit) for k, hit in found if hit and
+                     task_matches(hit[0], TASKS[hit[0]][hit[1]], needle)]
+            if found:
+                parent = self.tree.insert("", "end", text=title, open=True)
+                for _key, (category, index) in found:
+                    self.tree.insert(parent, "end", text=TASKS[category][index]["name"],
+                                     values=(category, index))
         for category, tasks in TASKS.items():
-            parent = self.tree.insert("", "end", text=category, open=False)
-            for index, task in enumerate(tasks):
+            shown = [(i, t) for i, t in enumerate(tasks) if task_matches(category, t, needle)]
+            if not shown:
+                continue
+            parent = self.tree.insert("", "end", text=category, open=bool(needle))
+            for index, task in shown:
                 self.tree.insert(parent, "end", text=task["name"], values=(category, index))
-        self.tree.insert("", "end", text="Custom command", values=("__custom__", 0))
+        if not needle or task_matches("", {"name": "Custom command", "desc": "any m365 command"}, needle):
+            self.tree.insert("", "end", text="Custom command", values=("__custom__", 0))
+
+    # ---- Favorites and Recent (v0.6, as GAMGUI: m365gui_tasklists.json) -----
+    def _load_tasklists(self):
+        try:
+            with open(TASKLISTS_PATH, encoding="utf-8") as handle:
+                data = json.load(handle)
+            favorites = [k for k in data.get("favorites", []) if isinstance(k, str)]
+            recent = [k for k in data.get("recent", []) if isinstance(k, str)]
+        except (OSError, ValueError, AttributeError):
+            favorites, recent = [], []
+        return favorites, recent[:RECENT_MAX]
+
+    def _save_tasklists(self):
+        try:
+            with open(TASKLISTS_PATH, "w", encoding="utf-8") as handle:
+                json.dump({"favorites": self.favorites, "recent": self.recent}, handle, indent=1)
+        except OSError as exc:
+            self._log("Could not save Favorites/Recent: " + str(exc))
+
+    def _remember_recent(self):
+        # The task just run moves to the top of Recent (at most RECENT_MAX).
+        task = self.current_task
+        if not task:
+            return
+        key = next((task_key(c, t["name"]) for c, ts in TASKS.items() for t in ts if t is task), None)
+        if not key:
+            return
+        self.recent = [key] + [k for k in self.recent if k != key][:RECENT_MAX - 1]
+        self._save_tasklists()
+        self._refresh_special_nodes()
+
+    def _refresh_special_nodes(self):
+        # Redraws the list but keeps the selected task selected.
+        selected = self.tree.selection()
+        values = self.tree.item(selected[0], "values") if selected else None
+        self._populate_tree()
+        if values:
+            for parent in self.tree.get_children(""):
+                if self.tree.item(parent, "text") in ("Favorites", "Recent"):
+                    continue
+                for child in self.tree.get_children(parent):
+                    if tuple(self.tree.item(child, "values")) == tuple(values):
+                        self.tree.selection_set(child)
+                        self.tree.see(child)
+                        return
+
+    def _tree_menu(self, event):
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        values = self.tree.item(item, "values")
+        if not values or values[0] == "__custom__":
+            return
+        key = task_key(values[0], TASKS[values[0]][int(values[1])]["name"])
+        menu = tk.Menu(self, tearoff=0)
+        if key in self.favorites:
+            menu.add_command(label="Remove from Favorites", command=lambda: self._toggle_favorite(key))
+        else:
+            menu.add_command(label="Add to Favorites", command=lambda: self._toggle_favorite(key))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _toggle_favorite(self, key):
+        if key in self.favorites:
+            self.favorites.remove(key)
+        else:
+            self.favorites.append(key)
+        self._save_tasklists()
+        self._refresh_special_nodes()
+
+    # ---- Run for each CSV row (v0.6) ----------------------------------------
+    def _bulk_dialog(self):
+        # Choose a CSV file, say which column fills each box (or the form's
+        # value), optionally only the first N rows, then run.
+        task = self.current_task
+        if not task or not bulk_available(task):
+            messagebox.showinfo(APP_NAME, "Open an ordinary task first (not Custom command "
+                                "or a guided workflow) - it then runs once per CSV row.")
+            return
+        if self.running_proc is not None:
+            messagebox.showinfo(APP_NAME, "A command is already running.")
+            return
+        win = tk.Toplevel(self)
+        win.title(APP_NAME + " - Run for each CSV row: " + task["name"])
+        win.transient(self)
+        frame = ttk.Frame(win, padding=8); frame.pack(fill="both", expand=True)
+        path_var = tk.StringVar()
+        ttk.Label(frame, text="CSV file (first row = column names):").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame, textvariable=path_var, width=56).grid(row=0, column=1, sticky="we", padx=4)
+        maps = {}
+        state = {"headers": [], "rows": []}
+        grid = ttk.Frame(frame); grid.grid(row=2, column=0, columnspan=3, sticky="we", pady=8)
+        note = ttk.Label(frame, text="Choose a CSV file.", wraplength=620, justify="left")
+        note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        def load(path):
+            try:
+                with open(path, encoding="utf-8-sig", newline="") as handle:
+                    reader = csv.DictReader(handle)
+                    state["rows"] = [r for r in reader]
+                    state["headers"] = list(reader.fieldnames or [])
+            except (OSError, csv.Error, UnicodeDecodeError) as exc:
+                note.config(text="Could not read the file: " + str(exc))
+                return
+            for child in grid.winfo_children():
+                child.destroy()
+            maps.clear()
+            choices = [FORM_VALUE] + state["headers"]
+            for row, field in enumerate(task["fields"]):
+                ttk.Label(grid, text=field["label"]).grid(row=row, column=0, sticky="w", pady=1)
+                var = tk.StringVar(value=bulk_guess_column(field, state["headers"]))
+                ttk.Combobox(grid, textvariable=var, values=choices, state="readonly",
+                             width=34).grid(row=row, column=1, sticky="w", padx=6, pady=1)
+                maps[field["key"]] = var
+            note.config(text="%d data row(s), columns: %s" % (len(state["rows"]),
+                                                              ", ".join(state["headers"])))
+
+        def browse():
+            path = filedialog.askopenfilename(parent=win, title="CSV file",
+                                              filetypes=[("CSV file", "*.csv"), ("All files", "*.*")])
+            if path:
+                path_var.set(path)
+                load(path)
+        ttk.Button(frame, text="Browse...", command=browse).grid(row=0, column=2)
+        limit_var = tk.StringVar()
+        bottom = ttk.Frame(frame); bottom.grid(row=3, column=0, columnspan=3, sticky="we")
+        ttk.Label(bottom, text="Test run - only the first").pack(side="left")
+        ttk.Entry(bottom, textvariable=limit_var, width=5).pack(side="left", padx=4)
+        ttk.Label(bottom, text="rows (blank = every row)").pack(side="left")
+
+        def plan():
+            if not state["rows"]:
+                if path_var.get().strip():
+                    load(path_var.get().strip())
+                if not state["rows"]:
+                    messagebox.showerror(APP_NAME, "Choose a CSV file with at least one data row.",
+                                         parent=win)
+                    return None
+            limit = limit_var.get().strip()
+            if limit and (not limit.isdigit() or int(limit) < 1):
+                messagebox.showerror(APP_NAME, "Test rows must be a whole number of 1 or more.",
+                                     parent=win)
+                return None
+            rows = state["rows"][:int(limit)] if limit else state["rows"]
+            steps = bulk_plan(task, self.current_category, self._collect(),
+                              {k: v.get() for k, v in maps.items()}, rows)
+            bad = [(n, err) for n, _argv, err in steps if err]
+            if bad:
+                messagebox.showerror(APP_NAME, "%d row(s) cannot be run - fix the CSV (or the "
+                                     "column choices) first:\n\n" % len(bad)
+                                     + "\n".join("row %d: %s" % b for b in bad[:8]), parent=win)
+                return None
+            return steps
+
+        def first():
+            steps = plan()
+            if steps:
+                messagebox.showinfo(APP_NAME, "Row %d runs:\n\nm365 %s\n\n(%d row(s) in all)"
+                                    % (steps[0][0], " ".join(quote_if_needed(a) for a in steps[0][1]),
+                                       len(steps)), parent=win)
+
+        def go():
+            steps = plan()
+            if not steps:
+                return
+            if task["destructive"] and not messagebox.askyesno(
+                    APP_NAME + " - CONFIRM", "This makes a change or deletes data, once per "
+                    "row - %d row(s).\n\nFirst row:\nm365 %s\n\nAre you sure?"
+                    % (len(steps), " ".join(quote_if_needed(a) for a in steps[0][1])), parent=win):
+                return
+            win.destroy()
+            self._run_bulk(task, steps, path_var.get().strip())
+        buttons = ttk.Frame(frame); buttons.grid(row=4, column=0, columnspan=3, sticky="e", pady=(8, 0))
+        ttk.Button(buttons, text="Show the first row's command", command=first).pack(side="left")
+        ttk.Button(buttons, text="Run", command=go).pack(side="left", padx=4)
+        ttk.Button(buttons, text="Cancel", command=win.destroy).pack(side="left")
+        frame.columnconfigure(1, weight=1)
+        self._bulk_window = win               # the tests reach the dialog through this
+
+    def _run_bulk(self, task, steps, source):
+        # One m365 command per row, in order, on a worker thread. Stop ends it
+        # after the current row. A CSV record of every row goes to Logs.
+        self.workflow_cancel = False
+        self.run_button.config(state="disabled")
+        self._remember_recent()
+        stamp = datetime.datetime.now().strftime("%m-%d-%Y_%H-%M-%S")
+        record = os.path.join(LOG_DIR, "Bulk_%s_%s.csv" % (re.sub(r"[^A-Za-z0-9]+", "-",
+                                                                  task["name"]).strip("-"), stamp))
+
+        def worker():
+            done = failed = 0
+            rows = [["csv row", "result", "command", "detail"]]
+            try:
+                self.output_queue.put("\n===== %s - once per row of %s (%d row(s)) =====\n"
+                                      % (task["name"], source, len(steps)))
+                for number, argv, _err in steps:
+                    if self.workflow_cancel:
+                        self.output_queue.put("[Stopped - the remaining rows were not run.]\n")
+                        break
+                    shown = "m365 " + " ".join(quote_if_needed(a) for a in argv)
+                    rc, out = self._capture(argv)
+                    detail = " ".join(out.split())[:200]
+                    if rc == 0:
+                        done += 1
+                        self.output_queue.put("  row %d OK      %s\n" % (number, shown))
+                    else:
+                        failed += 1
+                        self.output_queue.put("  row %d FAILED  %s\n          %s\n" % (number, shown, detail))
+                    rows.append([number, "OK" if rc == 0 else "FAILED", shown, detail])
+                try:
+                    os.makedirs(LOG_DIR, exist_ok=True)
+                    with open(record, "w", newline="", encoding="utf-8") as handle:
+                        csv.writer(handle).writerows(rows)
+                    self.output_queue.put("Record of every row: %s\n" % record)
+                except OSError as exc:
+                    self.output_queue.put("Could not save the record: %s\n" % exc)
+                self.output_queue.put("===== DONE: %d OK, %d failed =====\n" % (done, failed))
+            except Exception as exc:
+                self.output_queue.put("BULK RUN ERROR: " + str(exc) + "\n")
+            finally:
+                self.running_proc = None
+                self.output_queue.put(None)
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ---- Pick... lists (v0.6) -------------------------------------------------
+    def _pick(self, kind, var):
+        # A small window: type the start of a name or address, pick from the
+        # list, OK fills the box. Users are searched on the server (thousands
+        # in a tenant); groups are loaded once per session.
+        if not self.m365_path:
+            messagebox.showerror(APP_NAME, "m365 CLI not found. Install it or click Locate m365.")
+            return
+        win = tk.Toplevel(self)
+        win.title(APP_NAME + " - Pick a " + kind)
+        win.transient(self)
+        win.geometry("560x420")
+        row = ttk.Frame(win, padding=6); row.pack(fill="x")
+        ttk.Label(row, text=("Name or address starts with:" if kind == "user"
+                             else "Name or address contains:")).pack(side="left")
+        text = tk.StringVar(value=var.get().strip())
+        entry = ttk.Entry(row, textvariable=text); entry.pack(side="left", fill="x", expand=True, padx=4)
+        status = ttk.Label(win, text="", padding=(6, 0)); status.pack(anchor="w")
+        box = tk.Listbox(win, activestyle="dotbox"); box.pack(fill="both", expand=True, padx=6, pady=4)
+        values = []
+
+        def show(choices, note):
+            if not win.winfo_exists():
+                return
+            box.delete(0, "end")
+            values[:] = [value for _label, value in choices]
+            for label, _value in choices:
+                box.insert("end", label)
+            status.config(text=note)
+
+        def search(*_):
+            if kind == "group":
+                if self._group_cache is None:
+                    return                  # still loading; shown when it arrives
+                found = group_choices(self._group_cache, text.get())
+                show(found, "%d group(s)" % len(found))
+                return
+            commands = user_search_commands(text.get())
+            if not commands:
+                show([], "Type the start of a name or address, then press Enter.")
+                return
+            status.config(text="Searching...")
+
+            def work():
+                results = []
+                for argv in commands:
+                    rc, out = self._quiet_run(argv, timeout=120)
+                    data = parse_json(out) if rc == 0 else None
+                    if not isinstance(data, list):
+                        note = "Could not search: " + " ".join(out.split())[:120]
+                        self.output_queue.put(lambda: show([], note))
+                        return
+                    results.append(data)
+                found = people_choices(results)
+                self.output_queue.put(lambda: show(found, "%d user(s)" % len(found)))
+            threading.Thread(target=work, daemon=True).start()
+
+        def choose(*_):
+            pick = box.curselection()
+            if pick:
+                var.set(values[pick[0]])
+                win.destroy()
+
+        buttons = ttk.Frame(win, padding=6); buttons.pack(fill="x")
+        ttk.Button(buttons, text="OK", command=choose).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=win.destroy).pack(side="right", padx=4)
+        if kind == "user":
+            ttk.Button(row, text="Search", command=search).pack(side="left")
+            entry.bind("<Return>", search)
+        else:
+            text.trace_add("write", search)
+        box.bind("<Double-Button-1>", choose)
+        entry.focus_set()
+        if kind == "group" and self._group_cache is None:
+            status.config(text="Loading the groups (once per session)...")
+
+            def load():
+                rc, out = self._quiet_run(GROUP_LIST_COMMAND, timeout=300)
+                data = parse_json(out) if rc == 0 else None
+                if isinstance(data, list):
+                    self._group_cache = data
+                    self.output_queue.put(search)
+                else:
+                    note = "Could not load the groups: " + " ".join(out.split())[:120]
+                    self.output_queue.put(lambda: show([], note))
+            threading.Thread(target=load, daemon=True).start()
+        else:
+            search()
+
+    # ---- "Signed in as" (v0.6) ----------------------------------------------
+    def _refresh_account(self):
+        self.account_label.config(text="Signed in as: (checking...)")
+        threading.Thread(target=self._account_worker, daemon=True).start()
+
+    def _account_worker(self):
+        # OFF the UI thread: 'm365 status'. Never touches running_proc, so a
+        # task can run at the same time.
+        text = account_text(self.m365_path, self._quiet_run)
+        self.output_queue.put(lambda: self.account_label.config(text=text))
+
+    def _quiet_run(self, argv, timeout=60):
+        # One m365 command for the window's own checks: (returncode, output).
+        try:
+            r = subprocess.run(self._build_invocation(argv), capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=timeout,
+                               stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+            return r.returncode, (r.stdout or "") + (r.stderr or "")
+        except Exception as exc:
+            return 1, str(exc)
 
     def _preselect(self):
         for parent in self.tree.get_children(""):
@@ -815,7 +766,14 @@ class M365Gui(tk.Tk):
         vals = self.tree.item(item[0], "values")
         if not vals: return
         if vals[0] == "__custom__": self._show_custom(); return
-        self.current_task = TASKS[vals[0]][int(vals[1])]
+        task = TASKS[vals[0]][int(vals[1])]
+        if task is self.current_task:
+            # Already open (e.g. the list was redrawn after a run and the
+            # same task re-selected): keep the boxes as they are - redrawing
+            # the form would wipe what was typed.
+            return
+        self.current_category = vals[0]
+        self.current_task = task
         self._show_form(self.current_task)
 
     def _clear_form(self):
@@ -831,13 +789,49 @@ class M365Gui(tk.Tk):
             var = tk.StringVar(value=field["default"])
             if field["choices"] is not None:
                 w = ttk.Combobox(self.form_frame, textvariable=var, values=field["choices"], state="readonly", width=40)
-                if field["choices"]: var.set(field["choices"][0])
+                var.set(dropdown_start(field))   # v0.6: the default, not always the first
             else:
                 w = ttk.Entry(self.form_frame, textvariable=var, width=62)
             w.grid(row=row, column=1, sticky="we", pady=2, padx=6)
+            # v0.6: a Pick... list for boxes that take a user or a group.
+            kind = picker_kind(getattr(self, "current_category", ""), task, field)
+            if kind:
+                ttk.Button(self.form_frame, text="Pick...",
+                           command=lambda k=kind, v=var: self._pick(k, v)).grid(
+                               row=row, column=2, sticky="w", pady=2)
             self.field_vars.append((field["key"], var))
+        # v0.6 "Save results to": a list task can send its results to a CSV
+        # or JSON file instead of the window (the CLI writes the format).
+        self.save_var = tk.StringVar(value="Screen")
+        self.save_path_var = tk.StringVar(value="")
+        if saves_output(task):
+            row = len(task["fields"])
+            ttk.Label(self.form_frame, text="Save results to").grid(row=row, column=0, sticky="w", pady=2)
+            line = ttk.Frame(self.form_frame)
+            line.grid(row=row, column=1, sticky="we", pady=2, padx=6)
+            ttk.Combobox(line, textvariable=self.save_var, values=SAVE_CHOICES, state="readonly",
+                         width=12).pack(side="left")
+            path_entry = ttk.Entry(line, textvariable=self.save_path_var)
+            path_entry.pack(side="left", fill="x", expand=True, padx=4)
+            browse = ttk.Button(self.form_frame, text="Browse...", command=self._browse_save)
+            browse.grid(row=row, column=2, sticky="w", pady=2)
+
+            def show_path(*_):
+                state = "disabled" if self.save_var.get() == "Screen" else "normal"
+                path_entry.configure(state=state)
+                browse.configure(state=state)
+            self.save_var.trace_add("write", show_path)
+            show_path()
         self.form_frame.columnconfigure(1, weight=1)
         self._preview()
+
+    def _browse_save(self):
+        fmt = SAVE_FORMATS.get(self.save_var.get(), "csv")
+        path = filedialog.asksaveasfilename(
+            title="Save results to", defaultextension="." + fmt,
+            filetypes=[(fmt.upper() + " file", "*." + fmt), ("All files", "*.*")])
+        if path:
+            self.save_path_var.set(path)
 
     def _show_custom(self):
         self._clear_form(); self.current_task = None
@@ -854,7 +848,8 @@ class M365Gui(tk.Tk):
             self.preview_box.delete("1.0", "end")
             self.preview_box.insert("1.0", WORKFLOW_PLANS[self.current_task["workflow"]])
             return
-        display, argv, err = build_command(self.current_task, self._collect())
+        display, argv, err = build_command(self.current_task, self._collect(),
+                                           getattr(self, "current_category", ""))
         self.preview_box.delete("1.0", "end")
         if err:
             self.generated_display = None; self.generated_argv = None
@@ -866,23 +861,16 @@ class M365Gui(tk.Tk):
     def _copy(self):
         self.clipboard_clear(); self.clipboard_append(self.preview_box.get("1.0", "end").strip())
 
-    # ---- execution ----------------------------------------------------------
-    def _run(self):
-        if self.running_proc is not None:
-            messagebox.showinfo(APP_NAME, "A command is already running."); return
-        if not self.m365_path:
-            messagebox.showerror(APP_NAME, "m365 CLI not found. Install it or click Locate m365."); return
-        if self.current_task and self.current_task.get("workflow") == "remove_guests":
-            self._run_remove_guests(); return
-        if self.current_task and self.current_task.get("workflow") == "onedrive_transfer":
-            self._run_onedrive_transfer(); return
-
+    def _preview_argv(self):
+        # The command in the preview box as (text, argv) - the built command,
+        # or the box's own text if it was edited. None (after telling the
+        # person) when there is nothing runnable.
         command_text = self.preview_box.get("1.0", "end").strip()
         if command_text.startswith("("):
             self._preview(); command_text = self.preview_box.get("1.0", "end").strip()
         if not command_text or command_text.startswith("("):
-            messagebox.showerror(APP_NAME, "Fill in the required fields first."); return
-
+            messagebox.showerror(APP_NAME, "Fill in the required fields first.")
+            return None
         if command_text == getattr(self, "generated_display", None):
             argv = list(self.generated_argv)
         else:
@@ -890,15 +878,79 @@ class M365Gui(tk.Tk):
             if s.lower().startswith("m365 "): s = s[5:]
             argv = [a[1:-1] if a.startswith('"') and a.endswith('"') else a
                     for a in re.findall(r'"[^"]*"|\S+', s)]
-        if not argv: return
+        return (command_text, argv) if argv else None
+
+    def _save_script(self):
+        # v0.6 (as GAMGUI): the previewed command as a PowerShell (.ps1) or
+        # bash (.sh) script, to run later or on a schedule.
+        if self.current_task and self.current_task.get("workflow"):
+            messagebox.showinfo(APP_NAME, "A guided workflow runs several commands with checks "
+                                "in between, so it cannot be saved as one script.")
+            return
+        got = self._preview_argv()
+        if not got:
+            return
+        _text, argv = got
+        default = "ps1" if os.name == "nt" else "sh"
+        name = re.sub(r"[^A-Za-z0-9]+", "-", (self.current_task or {}).get("name", "m365-command")).strip("-")
+        path = filedialog.asksaveasfilename(
+            title="Save as script", initialfile=name + "." + default, defaultextension="." + default,
+            filetypes=[("PowerShell script", "*.ps1"), ("bash script", "*.sh")])
+        if not path:
+            return
+        kind = "sh" if path.lower().endswith(".sh") else "ps1"
+        text = script_text(argv, kind, (self.current_task or {}).get("name"), APP_VERSION,
+                           datetime.date.today().strftime("%m-%d-%Y"))
+        try:
+            with open(path, "w", encoding="ascii" if text.isascii() else "utf-8", newline="") as h:
+                h.write(text)
+            if kind == "sh" and os.name != "nt":
+                os.chmod(path, 0o755)
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, "Could not save the script:\n" + str(exc))
+            return
+        self._append_output("Saved the command as a script: " + path + "\n")
+
+    # ---- execution ----------------------------------------------------------
+    def _run(self):
+        if self.running_proc is not None:
+            messagebox.showinfo(APP_NAME, "A command is already running."); return
+        if not self.m365_path:
+            messagebox.showerror(APP_NAME, "m365 CLI not found. Install it or click Locate m365."); return
+        if self.current_task and self.current_task.get("workflow"):
+            self._remember_recent()
+        if self.current_task and self.current_task.get("workflow") == "remove_guests":
+            self._run_remove_guests(); return
+        if self.current_task and self.current_task.get("workflow") == "onedrive_transfer":
+            self._run_onedrive_transfer(); return
+
+        got = self._preview_argv()
+        if not got:
+            return
+        command_text, argv = got
 
         if self.current_task and self.current_task["destructive"]:
             if not messagebox.askyesno(APP_NAME + " - CONFIRM",
                     "This makes a change or deletes data:\n\n" + command_text + "\n\nAre you sure?"):
                 return
 
+        # v0.6 "Save results to" a file: the CLI writes CSV / JSON itself.
+        save_to = ""
+        if self.current_task and saves_output(self.current_task) \
+                and self.save_var.get() in SAVE_FORMATS:
+            save_to = self.save_path_var.get().strip()
+            if not save_to:
+                messagebox.showerror(APP_NAME, "Choose the file to save the results to "
+                                     "(Browse...), or set 'Save results to' back to Screen.")
+                return
+            argv = with_output_format(argv, SAVE_FORMATS[self.save_var.get()])
+            command_text = "m365 " + " ".join(quote_if_needed(a) for a in argv)
+
         self._append_output("\n> " + command_text + "\n")
+        if save_to:
+            self._append_output("(saving the results to " + save_to + ")\n")
         self.run_button.config(state="disabled")
+        self._remember_recent()
 
         def worker():
             try:
@@ -907,8 +959,18 @@ class M365Gui(tk.Tk):
                                         text=True, encoding="utf-8", errors="replace",
                                         stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
                 self.running_proc = proc
-                for line in proc.stdout:
-                    self.output_queue.put(line)
+                if save_to:
+                    # Collected, then written only if the command worked - an
+                    # error message must not end up in the CSV / JSON file.
+                    text = proc.stdout.read()
+                    proc.wait()
+                    if proc.returncode == 0:
+                        self.output_queue.put(save_results(save_to, text))
+                    else:
+                        self.output_queue.put(text)
+                else:
+                    for line in proc.stdout:
+                        self.output_queue.put(line)
                 proc.wait()
                 if proc.returncode != 0:
                     self.output_queue.put(
@@ -1077,6 +1139,7 @@ class M365Gui(tk.Tk):
         if path:
             self.m365_path = path
             self.path_label.config(text="m365: " + path)
+            self._refresh_account()
             if not self.config_parser.has_section(APP_NAME.lower()):
                 self.config_parser.add_section(APP_NAME.lower())
             self.config_parser.set(APP_NAME.lower(), "m365_path", path)

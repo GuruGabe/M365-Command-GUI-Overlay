@@ -42,6 +42,18 @@ before adding it.
 
 ## Session log
 
+- 10-23-2026 (v0.6): split into M365GUI.py (window), m365_catalog.py (tasks,
+  command builder, search/pickers/bulk/script helpers) and m365_workflows.py
+  (OneDrive copy), like GAMGUI. Added search, Favorites/Recent
+  (m365gui_tasklists.json), "Signed in as", Pick... lists (users searched with
+  the CLI's startsWith filters; groups loaded once), Save results to CSV/JSON,
+  Run for each CSV row (M365GUI loops; the CLI has no CSV loop), Save as
+  script (.ps1/.sh; Windows PowerShell 5.1 drops embedded double quotes when
+  starting a program - the .ps1 refuses such values there), look-alike
+  character cleaning. Fixed: the form was redrawn (typed values lost) when
+  Recent re-selected the task after a run; dropdowns ignored their default.
+  Tests: tests\test_v06_*.py (hidden windows, fake m365).
+
 - 10-23-2026 (v0.5): installers and in-app updates ported from GAMGUI -
   .github/workflows/build-installers.yml (7 files per release),
   installer/m365gui.iss (its own AppId), build-macos-dmg.sh,

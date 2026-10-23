@@ -136,6 +136,26 @@
   REMOVE ALL GUEST ACCOUNTS
     Users > Remove ALL guest users. Review the list, type DELETE to confirm.
 
+  FIND A TASK QUICKLY
+    Type words in the Search box above the list (e.g. "reset password").
+    Right-click a task you use often and choose Add to Favorites - it then
+    sits at the top. Recent shows the last 10 tasks you ran.
+
+  PICK A PERSON OR GROUP
+    Click Pick... next to the box, type the start of the name or address,
+    press Enter, choose from the list and click OK.
+
+  DO THE SAME THING FOR A LIST OF PEOPLE
+    Fill in the task once, click "Run for each CSV row...", choose your CSV
+    file (first row = column names), check which column fills each box, type
+    2 in "Test run - only the first ... rows" and Run. When those 2 look
+    right, run it again with the box empty for every row. Each row's result
+    shows in the window and is saved in the Logs folder.
+
+  SAVE A LIST TO A FILE
+    In a "List ..." task, set "Save results to" to CSV file, click Browse...,
+    choose where, then Run. Open the file in Excel.
+
   GIVE A LEAVER'S ONEDRIVE FILES TO THEIR MANAGER
     OneDrive > Copy a user's OneDrive files to another user. Type the
     leaver's sign-in name in From and the manager's in To, and click Run.

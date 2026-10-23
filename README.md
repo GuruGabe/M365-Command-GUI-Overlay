@@ -114,6 +114,25 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
 There's also a **Custom command** box for anything not yet built into a form -
 so you're never limited to the built-in tasks.
 
+### Working faster (0.6 - as in GAMGUI)
+- **Search** above the task list (any words from a task's name or
+  description), **Favorites** (right-click a task) and **Recent** (the last 10
+  tasks you ran) at the top of the list.
+- **Signed in as** at the top: the account m365 uses (click to check again).
+- **Pick...** next to user and group boxes - type the start of a name or
+  address and choose. Users are searched in Microsoft 365 as you ask; groups
+  load once per session.
+- **Save results to** a CSV or JSON file for every task that lists things
+  (the CLI writes the format; an error is shown, never saved into the file).
+- **Run for each CSV row** - the open task once per row of a CSV file; each
+  box takes a column or the form's value; test-run the first rows; a record of
+  every row goes to `Logs`.
+- **Save as script** - the previewed command as a PowerShell `.ps1` or bash
+  `.sh` script. Values are passed exactly; Windows PowerShell 5.1 refuses a
+  value containing a double quote (it would change it) - use PowerShell 7.
+- **Pasted look-alike characters** (curly quotes, invisible zero-width
+  spaces) in address and ID boxes are removed before the command is built.
+
 ---
 
 ## Get it running (the whole path, from zero)
@@ -322,7 +341,9 @@ xattr -dr com.apple.quarantine dist/M365GUI
 
 | File | Purpose |
 |------|---------|
-| `M365GUI.py` | The application (standard library only) |
+| `M365GUI.py` | The application window (standard library only) |
+| `m365_catalog.py` | The task catalog and command builder, plus search, Pick..., CSV-row and script helpers |
+| `m365_workflows.py` | Guided workflows (the OneDrive copy) |
 | `m365_update.py` | macOS / Linux in-app updater and What's new (from GAMGUI) |
 | `updatem365gui.ps1` | Windows updater (shipped inside the Windows builds) |
 | `installer\` | Inno Setup script (Windows Setup.exe), DMG and deb/rpm build scripts |

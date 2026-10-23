@@ -1,6 +1,38 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-23-2026  v0.6  FIND, PICK, SAVE AND REPEAT - THE WAY GAMGUI WORKS.
+                  - Search box above the task list: type any words from a
+                    task's name or description.
+                  - Favorites and Recent at the top of the list: right-click
+                    a task to add it to Favorites; the last 10 tasks you ran
+                    are under Recent.
+                  - "Signed in as" at the top shows which account m365 uses
+                    (click it to check again) - and says so when m365 is not
+                    signed in or Node.js is missing.
+                  - Pick... next to user and group boxes: type the start of
+                    a name or address and choose from the list.
+                  - "Save results to" a CSV or JSON file for the 13 tasks
+                    that list things (an error is never saved into the
+                    file - it shows in the window).
+                  - Run for each CSV row: runs the open task once per row of
+                    a CSV file; each box takes a column or the form's value.
+                    Test-run the first rows, Stop after the current row, a
+                    record of every row in Logs. A destructive task asks
+                    once, with the row count.
+                  - Save as script: the previewed command as a PowerShell
+                    (.ps1) or bash (.sh) script. Any value is passed exactly
+                    (in Windows PowerShell 5.1, a value with a double quote
+                    is refused - run it with PowerShell 7).
+                  - Curly quotes and invisible characters pasted into an
+                    address or ID box are removed before the command is
+                    built (as GAMGUI 2.93); passwords and names keep every
+                    character.
+                  - Fixed: after a run, the boxes of the task were cleared.
+                  - Fixed: a dropdown started on its first choice instead of
+                    its default.
+                  - Tests: tests\test_v06_*.py (finding, pickers, saveto,
+                    bulk, script, lookalike).
 10-23-2026  v0.5  INSTALLERS FOR WINDOWS, MACOS AND LINUX; UPDATES ITSELF.
                   - Every release now has an installer and a portable copy
                     for each system, like GAMGUI: Windows Setup.exe

@@ -17,6 +17,12 @@
      - Runs it through YOUR m365 CLI and streams the output live
      - Requires confirmation for destructive actions
      - Logs everything to a session log file
+   And (v0.6, as GAMGUI): a Search box, Favorites and Recent, "Signed in as",
+   Pick... lists for users and groups, Save results to a CSV / JSON file, Run
+   for each CSV row (record in Logs\Bulk_*.csv), Save as script (.ps1 / .sh),
+   and removal of pasted curly quotes / invisible characters in address and
+   ID boxes. Favorites and Recent are kept in m365gui_tasklists.json in the
+   settings folder.
 
    M365GUI is the Microsoft-world counterpart to GAMGUI (for Google Workspace).
    It holds no credentials of its own; all authority comes from your existing
