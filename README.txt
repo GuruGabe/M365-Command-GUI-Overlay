@@ -84,6 +84,16 @@
    full command. The "Remove ALL guest users" task lists everything and makes
    you type DELETE before removing anything.
 
+   STAFF HAND-OFF (Users, v0.8) and COMPROMISED ACCOUNT RESPONSE (Security,
+   v0.8): see README.md "Guided workflows". Each asks once before changing
+   anything and keeps a record folder in Records\ (settings folder):
+   hand-off = user.json, groups-before.json, licenses-before.json,
+   onedrive-copy.csv, steps.csv; incident = user.json, signins.json,
+   mfa-methods.json, groups.json, licenses.json, steps.csv, NEXT-STEPS.txt.
+   These hold personal data - keep them with the hand-over / incident record
+   and delete them when no longer needed. A new password is NEVER written to
+   any of them or to the log.
+
    COPY A USER'S ONEDRIVE FILES TO ANOTHER USER (OneDrive section, v0.4):
      - Copies EVERYTHING in the From user's OneDrive into a new folder in the
        To user's OneDrive (default name 'Files from <name> MM-DD-YYYY').

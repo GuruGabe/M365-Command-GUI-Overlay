@@ -3,7 +3,7 @@
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
 # Modified: 10-23-2026
-# Version:  0.7
+# Version:  0.8
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -44,7 +44,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.7"
+APP_VERSION = "0.8"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -237,6 +237,8 @@ LOG_DIR = os.path.join(DATA_DIR, "Logs")
 # Favorites and Recent tasks (v0.6) - their own small JSON file, as in GAMGUI
 # (task names can hold characters the .ini reader treats specially).
 TASKLISTS_PATH = os.path.join(DATA_DIR, "m365gui_tasklists.json")
+# Records the guided workflows keep (v0.8): hand-off records, incident evidence.
+RECORDS_DIR = os.path.join(DATA_DIR, "Records")
 RECENT_MAX = 10
 
 def save_results(path, text):
@@ -284,7 +286,23 @@ from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
                           with_output_format, dropdown_start, FORM_VALUE,
                           bulk_available, bulk_guess_column, bulk_plan, script_text)
 from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
-                            default_transfer_folder, size_text, transfer_onedrive)
+                            default_transfer_folder, size_text, transfer_onedrive,
+                            staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS)
+
+def random_password(length=16):
+    # A new password for a compromised account: letters, digits and symbols
+    # (at least one of each kind, as Microsoft 365's password rules want),
+    # from the 'secrets' module (made for passwords, not 'random').
+    import secrets
+    import string
+    # No % or ^ (cmd.exe treats them specially, should m365 ever be started
+    # through m365.cmd) and no quotes.
+    kinds = [string.ascii_uppercase, string.ascii_lowercase, string.digits, "!@#$*-_=+?"]
+    chars = [secrets.choice(k) for k in kinds]
+    pool = "".join(kinds)
+    chars += [secrets.choice(pool) for _ in range(length - len(chars))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
 
 # =============================================================================
 # SECTION: Main window
@@ -483,6 +501,61 @@ class M365Gui(tk.Tk):
             self.favorites.append(key)
         self._save_tasklists()
         self._refresh_special_nodes()
+
+    # ---- Staff hand-off / compromised account (v0.8) --------------------------
+    def _run_record_workflow(self, name):
+        # The two workflows that keep a record folder in RECORDS_DIR. They ask
+        # their one question through _ask_yesno; the new password (compromised)
+        # goes to _show_secret on the window's thread - never to the output.
+        self.workflow_cancel = False
+        self.run_button.config(state="disabled")
+        values = self._collect()
+
+        def show_secret(title, secret):
+            self.output_queue.put(lambda: self._show_secret(title, secret))
+            self.output_queue.put("(The new password is in its own window - it is not "
+                                  "shown here or saved in any log.)\n")
+
+        def worker():
+            try:
+                os.makedirs(RECORDS_DIR, exist_ok=True)
+                if name == "staff_handoff":
+                    staff_handoff(self._capture, self.output_queue.put, self._ask_yesno,
+                                  lambda: self.workflow_cancel, values, RECORDS_DIR)
+                else:
+                    compromised_response(self._capture, self.output_queue.put, self._ask_yesno,
+                                         lambda: self.workflow_cancel, values, RECORDS_DIR,
+                                         show_secret, random_password)
+            except Exception as exc:
+                self.output_queue.put("WORKFLOW ERROR: " + str(exc) + "\n")
+            finally:
+                self.running_proc = None
+                self.output_queue.put(None)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_secret(self, title, secret):
+        # A small window with the secret in a read-only box and a Copy button.
+        # Deliberately NOT _append_output: that writes to the session log.
+        win = tk.Toplevel(self)
+        win.title(APP_NAME + " - New password")
+        win.transient(self)
+        ttk.Label(win, text=title, padding=8, wraplength=460).pack(anchor="w")
+        # The text goes straight into the box: a StringVar made here would be
+        # garbage-collected when this method returns and the box would show
+        # EMPTY (found by tests/test_v08_workflows.py) - a reset password
+        # nobody ever saw.
+        box = ttk.Entry(win, width=40, font=("Consolas", 12))
+        box.insert(0, secret)
+        box.configure(state="readonly")
+        box.pack(padx=8, fill="x")
+        row = ttk.Frame(win, padding=8); row.pack(fill="x")
+
+        def copy():
+            self.clipboard_clear()
+            self.clipboard_append(secret)
+        ttk.Button(row, text="Copy", command=copy).pack(side="left")
+        ttk.Button(row, text="Close", command=win.destroy).pack(side="right")
+        self._secret_window = win              # the tests reach the window through this
 
     # ---- Run for each CSV row (v0.6) ----------------------------------------
     def _bulk_dialog(self):
@@ -923,6 +996,8 @@ class M365Gui(tk.Tk):
             self._run_remove_guests(); return
         if self.current_task and self.current_task.get("workflow") == "onedrive_transfer":
             self._run_onedrive_transfer(); return
+        if self.current_task and self.current_task.get("workflow") in ("staff_handoff", "compromised"):
+            self._run_record_workflow(self.current_task["workflow"]); return
 
         got = self._preview_argv()
         if not got:

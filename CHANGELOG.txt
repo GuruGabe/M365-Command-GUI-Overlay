@@ -1,6 +1,26 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-23-2026  v0.8  GUIDED STAFF HAND-OFF AND COMPROMISED ACCOUNT RESPONSE.
+                  - Users > Staff hand-off - someone is leaving: saves a
+                    record of their groups and licenses first, asks once,
+                    then (only the steps set to Yes) blocks sign-in, signs
+                    them out, copies their OneDrive files to their manager
+                    while the license still exists, sets an automatic reply,
+                    removes them from their groups and removes their
+                    licenses. Removing licenses (their mailbox is deleted 30
+                    days later) is No by default. A failed step is reported
+                    and the others still run.
+                  - Security > Compromised account response: blocks sign-in,
+                    signs the account out everywhere and sets a new random
+                    password (shown once in its own window - never in the
+                    output or any log), then saves evidence (recent sign-ins,
+                    MFA methods, groups, licenses) and NEXT-STEPS.txt with
+                    what to do next in the admin centers.
+                  - Both keep their records in the Records folder (in the
+                    settings folder).
+                  - Tests: tests\test_v08_workflows.py (also checks every
+                    command they run against the CLI's docs).
 10-23-2026  v0.7  118 TASKS (WAS 35) - EVERY ONE CHECKED AGAINST THE CLI'S OWN DOCS.
                   - Users: members only, user with manager, a user's groups
                     and licenses, job title / department / office, set or

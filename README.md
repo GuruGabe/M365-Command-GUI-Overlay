@@ -106,6 +106,20 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
 > Azure CLI's app, Microsoft Graph works but every SharePoint call fails with
 > `invalid_request` (401). See [Troubleshooting](#troubleshooting).
 
+### Guided workflows (0.8)
+- **Staff hand-off - someone is leaving** (Users): saves a record of their
+  groups and licenses, asks once, then - only the steps you set to Yes -
+  blocks sign-in, signs them out, copies their OneDrive files to their manager
+  (while the license still exists), sets an automatic reply, removes them from
+  their groups and removes their licenses (No by default: the mailbox is
+  deleted 30 days later).
+- **Compromised account response** (Security): blocks sign-in, signs the
+  account out everywhere, sets a new random password (shown once, in its own
+  window - never in the output or a log), then saves evidence (sign-ins, MFA
+  methods, groups, licenses) and `NEXT-STEPS.txt` for what only the admin
+  centers can do (inbox rules, MFA methods, sent mail, app consents).
+- Records go to the **Records** folder in the settings folder.
+
 ### Security
 - **Sign a user out everywhere** (revoke sessions) - first move on a
   compromised account - and view **sign-in activity**.

@@ -42,6 +42,16 @@ before adding it.
 
 ## Session log
 
+- 10-23-2026 (v0.8): guided Staff hand-off (record -> ask -> block -> sign out
+  -> OneDrive copy (reuses transfer_onedrive) -> auto-reply -> groups ->
+  licenses) and Compromised account response (block, sign out, random
+  password via secrets, evidence + NEXT-STEPS.txt) in m365_workflows.py;
+  records in DATA_DIR/Records (gitignored). Auto-reply for ANOTHER user needs
+  rights to that mailbox (delegated Graph) - an optional step that reports
+  its result. Found by the window test: the password window used a local
+  StringVar, garbage-collected on return -> an EMPTY box; the text is now
+  inserted directly. tests\m365docs.py is the shared docs reader.
+
 - 10-23-2026 (v0.7): catalog 35 -> 118 tasks in 13 sections (Users, Groups,
   Teams/M365 groups + channels, SharePoint admin, OneDrive list, Roles and admin
   units, Service health and security, Outlook, Planner, usage Reports). Every

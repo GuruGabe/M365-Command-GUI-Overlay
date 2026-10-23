@@ -81,6 +81,25 @@ TASKS = {
     "list).",
     "entra user recyclebinitem restore --id {id}",
     [F("User object id (from recycle bin list)", "id")]),
+  # ---- v0.8: guided workflow (m365_workflows.staff_handoff) -----------------
+  T("Staff hand-off - someone is leaving",
+    "Saves a record of the person's groups and licenses, then does the steps chosen below "
+    "in a safe order: block sign-in, sign them out, copy their OneDrive files to their "
+    "manager (while the license still exists), set an automatic reply, remove them from "
+    "their groups, remove their licenses. Asks once before changing anything. Removing "
+    "licenses deletes their mailbox 30 days later - it is No by default.",
+    "", [F("Leaver (UPN)", "leaver"),
+         F("Their manager (UPN) - gets the OneDrive files", "manager", False),
+         F("Block sign-in", "block", choices=["Yes", "No"], default="Yes"),
+         F("Sign them out everywhere", "signout", choices=["Yes", "No"], default="Yes"),
+         F("Copy their OneDrive files to the manager", "copy", choices=["Yes", "No"], default="Yes"),
+         F("Set an automatic reply (needs rights to their mailbox)", "autoreply",
+           choices=["Yes", "No"], default="No"),
+         F("Automatic reply message", "reply", False),
+         F("Remove them from every group", "groups", choices=["Yes", "No"], default="No"),
+         F("Remove their licenses (mailbox deleted 30 days later)", "licenses",
+           choices=["Yes", "No"], default="No")],
+    workflow="staff_handoff"),
   # ---- v0.7 (10-23-2026): options checked against the CLI's docs ----------
   T("List members only (no guests)", "Lists the organization's own accounts, without guests.",
     "entra user list --type Member --output text", []),
@@ -471,6 +490,17 @@ TASKS = {
     "spo tenant settings list --output text", []),
  ],
  "Security": [
+  # ---- v0.8: guided workflow (m365_workflows.compromised_response) ----------
+  T("Compromised account response",
+    "For an account someone else got into: blocks sign-in, signs it out everywhere and sets "
+    "a new random password (shown once, never saved), then saves evidence - recent "
+    "sign-ins, MFA methods, groups, licenses - and a list of the next steps to do in the "
+    "admin centers. Asks once before changing anything.",
+    "", [F("User (UPN)", "email"),
+         F("Block sign-in", "block", choices=["Yes", "No"], default="Yes"),
+         F("Sign them out everywhere", "signout", choices=["Yes", "No"], default="Yes"),
+         F("Set a new random password", "password", choices=["Yes", "No"], default="Yes")],
+    workflow="compromised"),
   T("Sign user out everywhere",
     "Revokes all sign-in sessions for the user - first move on a compromised "
     "account (they must sign in again).",
@@ -527,6 +557,13 @@ WORKFLOW_PLANS = {
                          "count the files -> ask you -> copy into the new folder -> "
                          "count what arrived -> remove the temporary access. Click Run "
                          "to start.",
+    "staff_handoff": "Workflow: save a record of their groups and licenses -> ask you -> "
+                     "block sign-in -> sign out -> copy OneDrive files -> automatic reply "
+                     "-> remove from groups -> remove licenses (only the steps set to Yes). "
+                     "Records in the Records folder. Click Run to start.",
+    "compromised": "Workflow: ask you -> block sign-in -> sign out everywhere -> new random "
+                   "password (shown once) -> save evidence (sign-ins, MFA methods, groups, "
+                   "licenses) and NEXT-STEPS.txt in the Records folder. Click Run to start.",
 }
 
 # =============================================================================
@@ -763,7 +800,7 @@ def task_matches(category, task, needle):
 #   searched here.
 # =============================================================================
 
-USER_PICK_KEYS = {"email", "from", "to", "manager", "owner"}   # boxes that take a user's UPN
+USER_PICK_KEYS = {"email", "from", "to", "manager", "owner", "leaver"}   # boxes that take a user's UPN
 
 # Pasted look-alike characters (v0.6, from GAMGUI 2.93 - GAM issue #1623): an
 # address or ID pasted from Word, Outlook or a web page often carries curly
@@ -772,7 +809,8 @@ USER_PICK_KEYS = {"email", "from", "to", "manager", "owner"}   # boxes that take
 # are cleaned; passwords, names and descriptions keep every character. The
 # preview shows the cleaned command.
 IDENTIFIER_KEYS = {"email", "from", "to", "id", "ids", "skuId", "team", "url", "loc",
-                   "manager", "au", "deleted", "owner", "owners", "members", "cc"}
+                   "manager", "au", "deleted", "owner", "owners", "members", "cc",
+                   "leaver"}
 NEVER_CLEAN_KEYS = {"password", "display", "first", "last", "desc", "folder", "nick",
                     "title", "dept", "office", "company", "message", "newname", "newteam",
                     "channel", "subject", "body", "service", "plan", "start", "end"}

@@ -1,7 +1,7 @@
 # test_catalog_docs.py - v0.7 (10-23-2026): every task's m365 command is
 # checked against the CLI's OWN documentation, which npm installs with it
-# (node_modules/@pnp/cli-microsoft365/docs/docs/cmd/...mdx). The M365GUI
-# counterpart of GAMGUI's parse check against gam.exe:
+# (see m365docs.py). The M365GUI counterpart of GAMGUI's parse check
+# against gam.exe:
 #   - the command has a doc page (it exists in this CLI version),
 #   - every --option the template uses is documented for that command,
 #   - every REQUIRED option (shown as --name <value> in the docs) is given,
@@ -9,9 +9,9 @@
 # Skipped (not failed) on a PC without the CLI installed.
 import os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, os.path.dirname(HERE)); sys.path.insert(0, HERE)
 import m365_catalog as c
-import M365GUI as m
+import m365docs as d
 
 fails = []
 def check(cond, msg):
@@ -19,54 +19,7 @@ def check(cond, msg):
     if not cond:
         fails.append(msg)
 
-GLOBAL = {"--output", "--query", "--verbose", "--debug", "--help"}
-
-def docs_root():
-    exe = m.find_m365("")
-    candidates = []
-    if exe:
-        real = os.path.realpath(exe)
-        candidates += [os.path.join(os.path.dirname(exe), "node_modules", "@pnp", "cli-microsoft365"),
-                       os.path.dirname(os.path.dirname(real))]
-    candidates.append(os.path.join(os.environ.get("APPDATA") or "", "npm", "node_modules", "@pnp",
-                                   "cli-microsoft365"))
-    for base in candidates:
-        path = os.path.join(base, "docs", "docs", "cmd")
-        if os.path.isdir(path):
-            return path
-    return None
-
-def command_words(template):
-    words = []
-    for tok in template.split():
-        if tok.startswith("-") or tok.startswith("[") or "{" in tok:
-            break
-        words.append(tok)
-    return words
-
-def doc_page(root, words):
-    if len(words) == 1:
-        return os.path.join(root, words[0] + ".mdx")
-    # e.g. entra user list -> entra/user/user-list.mdx; onedrive list ->
-    # onedrive/onedrive-list.mdx (a group's own commands carry its name).
-    for path in (os.path.join(root, words[0], words[1], "-".join(words[1:]) + ".mdx"),
-                 os.path.join(root, words[0], "-".join(words[1:]) + ".mdx"),
-                 os.path.join(root, words[0], "-".join(words) + ".mdx")):
-        if os.path.exists(path):
-            return path
-    return None
-
-def doc_options(text):
-    # {--option: (required, text of its description)} from the Options list:
-    #   `-u, --webUrl <webUrl>`     required     `--force`   optional switch
-    #   `--type [type]`             optional
-    section = text.split("## Options", 1)[-1].split("\n## ", 1)[0]
-    out = {}
-    for m_ in re.finditer(r"`(?:-\w, )?(--[A-Za-z0-9]+)( <[^>]+>| \[[^\]]+\])?`\s*\n:([^\n]*)", section):
-        out[m_.group(1)] = ((m_.group(2) or "").strip().startswith("<"), m_.group(3))
-    return out
-
-root = docs_root()
+root = d.docs_root()
 if not root:
     print("SKIP the CLI for Microsoft 365 (and its docs) is not installed here")
     print("FAILURES: 0")
@@ -79,16 +32,16 @@ for category, tasks in c.TASKS.items():
         template = task["template"]
         if not template:
             continue                        # guided workflows: their own tests
-        words = command_words(template)
-        page = doc_page(root, words)
+        words = d.command_words(template)
+        page = d.doc_page(root, words)
         name = "%s > %s" % (category, task["name"])
         if not page:
             check(False, name + ": 'm365 " + " ".join(words) + "' has no doc page in this CLI")
             continue
-        options = doc_options(open(page, encoding="utf-8").read())
+        options = d.doc_options(open(page, encoding="utf-8").read())
         used = set(re.findall(r"(--[A-Za-z0-9]+)", template))
-        unknown = sorted(used - set(options) - GLOBAL)
-        required = sorted(o for o, (req, _d) in options.items() if req)
+        unknown = sorted(used - set(options) - d.GLOBAL)
+        required = sorted(o for o, (req, _desc) in options.items() if req)
         missing = [o for o in required if o not in used]
         # Some commands take ONE of several ways to name a thing (e.g. --id
         # or --userName): the docs mark each optional and say "Specify either"
