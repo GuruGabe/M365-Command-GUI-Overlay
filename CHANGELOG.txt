@@ -1,6 +1,41 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-23-2026  v0.7  118 TASKS (WAS 35) - EVERY ONE CHECKED AGAINST THE CLI'S OWN DOCS.
+                  - Users: members only, user with manager, a user's groups
+                    and licenses, job title / department / office, set or
+                    remove a manager, invite a guest, check a password
+                    against the policy, MFA registration report,
+                    permanently delete from / empty the recycle bin.
+                  - Groups: all four group types, rename / describe, make a
+                    member an owner.
+                  - Teams / Microsoft 365 groups: list (with site address),
+                    groups without owners, info, members and owners, change
+                    roles, remove someone, turn a group into a Team, deleted
+                    groups and restore; list / create / archive / unarchive
+                    / delete Teams, Teams a user is in, channels (list, add,
+                    delete, members).
+                  - SharePoint: team / communication sites, every site with
+                    OneDrives, site info, create team or communication site,
+                    delete / deleted / restore sites, site collection admins
+                    (list, add, remove), lock or read-only, sharing setting,
+                    a site's recycle bin and restore, external users, the
+                    organization settings. OneDrive: list every OneDrive.
+                  - New sections: Roles and admin units (admin roles, give a
+                    role, administrative units and members); Service health
+                    and security (health, issues, message center, security
+                    alerts, organization info, enterprise apps and their
+                    permission grants, audit log search, retention and
+                    sensitivity labels); Outlook (send an email, mailbox
+                    settings, rooms, room lists); Planner (a group's plans,
+                    a plan's tasks); Reports (usage of Microsoft 365, Teams,
+                    OneDrive, mail and SharePoint for 7-180 days).
+                  - Every task's command and options are checked against the
+                    documentation the CLI installs with itself (like GAMGUI's
+                    check against gam.exe): the command exists, every option
+                    is documented, every required option is given, and every
+                    dropdown value is one the docs allow.
+                  - Tests: tests\test_catalog_docs.py.
 10-23-2026  v0.6  FIND, PICK, SAVE AND REPEAT - THE WAY GAMGUI WORKS.
                   - Search box above the task list: type any words from a
                     task's name or description.

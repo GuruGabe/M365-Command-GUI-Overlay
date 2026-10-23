@@ -201,14 +201,19 @@ walkthrough. **README.txt** is the full reference.
 
 | Category | What it's for | Docs |
 |----------|---------------|------|
-| Users (Entra ID) | List, get, create, reset password, rename, usage location, block/unblock, delete, recycle bin, restore, remove all guests | [entra user](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-list/) |
-| Groups (Entra) | List, list by type, get info, create, list/add/remove members, delete | [entra group](https://pnp.github.io/cli-microsoft365/cmd/entra/group/group-list/) |
+| Users (Entra ID) | List (all / members / guests), get (with manager), create, reset password, rename, job title / department / office, manager, usage location, block/unblock, groups and licenses of a user, invite a guest, check a password, MFA registration report, delete, recycle bin (restore, delete for good, empty), remove all guests | [entra user](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-list/) |
+| Groups (Entra) | List, list by type (4 types), get info, create, rename / describe, list/add/remove members, make an owner, delete | [entra group](https://pnp.github.io/cli-microsoft365/cmd/entra/group/group-list/) |
 | Licenses | View all SKUs, list users with a license, assign, remove | [entra license](https://pnp.github.io/cli-microsoft365/cmd/entra/license/license-list/) |
-| Teams / M365 Groups | Add member to a Team | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
-| SharePoint | List sites, add user to a site group | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
-| OneDrive | Find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
+| Teams / M365 Groups | Microsoft 365 groups (with site address, without owners, info, members, roles, remove, deleted and restore, turn into a Team); Teams (list, a user's Teams, settings, create, archive, unarchive, delete); channels (list, add, delete, members) | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
+| SharePoint | List sites (all, team, communication, with OneDrives), site info, create team / communication site, delete, deleted and restore, site collection admins, lock / read-only, sharing setting, a site's recycle bin, external users, organization settings, add user to a site group | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
+| OneDrive | List every OneDrive, find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
 | Security | Sign out everywhere, sign-in activity | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
-| Diagnostics | Login status, CLI version, tenant id | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
+| Diagnostics | Login status, CLI version, tenant id |
+| Roles and admin units | Admin roles, give someone a role, administrative units and their members | [roleassignment](https://pnp.github.io/cli-microsoft365/cmd/entra/roleassignment/roleassignment-add/) |
+| Service health and security | Service health, current issues, message center, security alerts, organization info, enterprise apps and their permission grants, audit log search, retention and sensitivity labels | [serviceannouncement](https://pnp.github.io/cli-microsoft365/cmd/tenant/serviceannouncement/serviceannouncement-health-list/) |
+| Outlook | Send an email, mailbox settings, meeting rooms, room lists | [outlook](https://pnp.github.io/cli-microsoft365/cmd/outlook/mail/mail-send/) |
+| Planner | A group's plans, a plan's tasks | [planner](https://pnp.github.io/cli-microsoft365/cmd/planner/plan/plan-list/) |
+| Reports (usage) | Active users, Teams, OneDrive, mail and SharePoint usage, 7 to 180 days | [tenant report](https://pnp.github.io/cli-microsoft365/cmd/tenant/report/report-activeusercounts/) | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
 
 Plus a **Custom command** mode that accepts any `m365` command
 ([full command reference](https://pnp.github.io/cli-microsoft365/cmd/docs/)).

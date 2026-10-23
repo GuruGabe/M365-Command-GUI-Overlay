@@ -42,6 +42,16 @@ before adding it.
 
 ## Session log
 
+- 10-23-2026 (v0.7): catalog 35 -> 118 tasks in 13 sections (Users, Groups,
+  Teams/M365 groups + channels, SharePoint admin, OneDrive list, Roles and admin
+  units, Service health and security, Outlook, Planner, usage Reports). Every
+  command task is checked by tests\test_catalog_docs.py against the docs npm
+  installs with the CLI (docs/docs/cmd/**.mdx): page exists, options
+  documented, required options present, dropdown values allowed. A copy of
+  the test with 3 planted mistakes fails all 3 (checked). Docs naming:
+  <group>/<sub>/<sub>-<rest>.mdx, <group>/<rest>.mdx or <group>/<group>-<rest>.mdx;
+  some pages list values as one code span (`a,b`, `asc|desc`).
+
 - 10-23-2026 (v0.6): split into M365GUI.py (window), m365_catalog.py (tasks,
   command builder, search/pickers/bulk/script helpers) and m365_workflows.py
   (OneDrive copy), like GAMGUI. Added search, Favorites/Recent

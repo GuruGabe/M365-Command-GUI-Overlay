@@ -3,7 +3,7 @@
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
 # Modified: 10-23-2026
-# Version:  0.6
+# Version:  0.7
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -44,7 +44,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.6"
+APP_VERSION = "0.7"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
