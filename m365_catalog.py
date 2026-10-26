@@ -227,15 +227,16 @@ TASKS = {
     [F("Team display name e.g. Engineering", "team"), F("User (UPN)", "email"),
      F("Role", "role", choices=["Member", "Owner"])]),
   # ---- v0.7 (10-23-2026): options checked against the CLI's docs ----------
-  T("List Microsoft 365 groups (with site address)",
-    "Every Microsoft 365 group (every Team has one), with its SharePoint site address.",
-    "entra m365group list --withSiteUrl --output text", []),
+  T("List Microsoft 365 groups",
+    "Every Microsoft 365 group (every Team has one). For a group's SharePoint site, use "
+    "SharePoint > List team or communication sites.",
+    "entra m365group list --output text", []),
   T("Microsoft 365 groups without owners",
     "Groups nobody owns - nobody can manage their members or settings.",
     "entra m365group list --orphaned --output text", []),
   T("Get a Team / Microsoft 365 group's info",
-    "Shows one Microsoft 365 group (or Team), with its site address.",
-    "entra m365group get --displayName {team} --withSiteUrl --output text",
+    "Shows one Microsoft 365 group (or Team).",
+    "entra m365group get --displayName {team} --output text",
     [F("Team / group display name", "team")]),
   T("List a Team's members and owners",
     "Lists who is in a Team / Microsoft 365 group. Choose a role to see only owners or members.",
@@ -339,7 +340,9 @@ TASKS = {
      F("From (optional) e.g. 2026-10-01", "start", False), F("Until (optional)", "end", False)]),
   T("Retention labels", "The retention labels defined in Purview.",
     "purview retentionlabel list --output text", []),
-  T("Sensitivity labels", "The sensitivity labels defined in Purview.",
+  T("Sensitivity labels", "The sensitivity labels defined in Purview. 'The resource could "
+    "not be found' means the organization has none, or its licenses do not include "
+    "them (Microsoft Purview Information Protection).",
     "purview sensitivitylabel list --output text", []),
  ],
  "Outlook": [
@@ -369,32 +372,37 @@ TASKS = {
   # v0.7 (10-23-2026): Microsoft 365 usage reports. Options checked against
   # the CLI's docs. Needs the Reports.Read.All permission; names may show as
   # IDs if the tenant hides user details in reports (admin center setting).
-  T("Active users by product (counts)", "How many people used each Microsoft 365 service per day.",
-    "tenant report activeusercounts --period {period} --output text",
+  # v0.10: was 'tenant report activeusercounts' - Microsoft Graph reset the
+  # connection every time on a real tenant (10-26-2026, csv and json, every
+  # period) while the other reports worked; servicesusercounts answers the
+  # same question and works.
+  T("Active users per service (counts)",
+    "How many people were active and inactive in each Microsoft 365 service.",
+    "tenant report servicesusercounts --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("Active users - per person", "Each person's last activity date in each service.",
-    "tenant report activeuserdetail --period {period} --output text",
+    "tenant report activeuserdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("Teams activity - per person", "Chats, meetings and calls per person.",
-    "teams report useractivityuserdetail --period {period} --output text",
+    "teams report useractivityuserdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("Teams devices used - per person", "Which devices (Windows, Mac, iOS, Android, web) people use Teams on.",
-    "teams report deviceusageuserdetail --period {period} --output text",
+    "teams report deviceusageuserdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("OneDrive storage - per account", "Files and storage used in each OneDrive.",
-    "onedrive report usageaccountdetail --period {period} --output text",
+    "onedrive report usageaccountdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("OneDrive activity - per person", "Files viewed, edited, synced and shared per person.",
-    "onedrive report activityuserdetail --period {period} --output text",
+    "onedrive report activityuserdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("Mailbox storage - per mailbox", "Size and item counts of every mailbox.",
-    "outlook report mailboxusagedetail --period {period} --output text",
+    "outlook report mailboxusagedetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("Email activity - per person", "Mail sent, received and read per person.",
-    "outlook report mailactivityuserdetail --period {period} --output text",
+    "outlook report mailactivityuserdetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("SharePoint site usage - per site", "Files, storage and activity of each SharePoint site.",
-    "spo report siteusagedetail --period {period} --output text",
+    "spo report siteusagedetail --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
  ],
  "Roles and admin units": [
@@ -666,7 +674,9 @@ SAVE_FORMATS = {"CSV file": "csv", "JSON file": "json"}
 def saves_output(task):
     # A task that prints a list or details ('--output text' in its
     # template) can send them to a file instead.
-    return not task.get("workflow") and "--output text" in task.get("template", "")
+    # v0.10: or '--output csv' - the usage reports (the CLI refuses text there).
+    template = task.get("template", "")
+    return not task.get("workflow") and ("--output text" in template or "--output csv" in template)
 
 def with_output_format(argv, fmt):
     # The same command with its --output value changed (added if missing);

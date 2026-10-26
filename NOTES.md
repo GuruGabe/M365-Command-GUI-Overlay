@@ -42,6 +42,14 @@ before adding it.
 
 ## Session log
 
+- 10-26-2026 (v0.10): first LIVE run of every read-only, no-typed-input task
+  against the tenant (44): 33 OK. Fixed: report commands accept only
+  --output csv|json (the docs list --output as global, without the limit);
+  --withSiteUrl -> "Access denied" on private groups the admin is not a
+  member of (dropped). Sensitivity labels: "resource could not be found" =
+  none/not licensed (described). Tasks that need typed input, change data or
+  run workflows are still not live-tested (need throwaway test accounts).
+
 - 10-23-2026 (v0.9): m365_web.py browser version (127.0.0.1, session token
   header, JSON-only POSTs, Host allow-list + M365WEB_ALLOWED_HOSTS; the server
   rebuilds commands from form values and refuses unconfirmed destructive

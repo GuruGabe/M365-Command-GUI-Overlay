@@ -1,6 +1,27 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-26-2026  v0.10 FIXES FROM THE FIRST LIVE RUN AGAINST A REAL TENANT.
+                  - Every read-only task without typed boxes was run against
+                    a real Microsoft 365 tenant (44 tasks): 33 worked at once.
+                  - Fixed: all 9 usage reports failed ("Invalid option:
+                    expected one of json|csv") - the CLI's report commands
+                    only give CSV or JSON. They now show CSV, and can still
+                    be saved to a CSV or JSON file.
+                  - Fixed: 'List Microsoft 365 groups' failed with "Access
+                    denied" because it also asked for each group's site
+                    address, which Microsoft refuses for a private group you
+                    are not a member of. It now lists the groups without it
+                    (so does 'Get a Team / Microsoft 365 group's info').
+                  - Sensitivity labels explains "The resource could not be
+                    found" (no labels, or not in your licenses).
+                  - 'Active users by product (counts)' is now 'Active users
+                    per service (counts)': Microsoft Graph dropped the
+                    connection for the old report every time, while the
+                    service counts report works.
+                  - After the fixes: 42 of the 44 read-only tasks work on
+                    the real tenant (the other: no sensitivity labels there).
+                  - Tests: tests\test_v010_live.py.
 10-23-2026  v0.9  BROWSER VERSION; PASSWORDS NEVER REACH A FILE.
                   - New m365_web.py: M365GUI in a web browser (like GAMGUI's
                     gam_web.py), for a computer with no desktop (e.g. Azure
