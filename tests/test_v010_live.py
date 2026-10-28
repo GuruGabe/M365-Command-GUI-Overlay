@@ -20,7 +20,9 @@ def check(cond, msg):
         fails.append(msg)
 
 reports = [(cat, t) for cat, ts in c.TASKS.items() for t in ts if " report " in " " + t["template"] + " "]
-check(len(reports) == 9, "the 9 usage reports are found (%d)" % len(reports))
+# 9 in v0.10; 11 since 10-28-2026 (v0.12: mailbox quota counts, OneDrive
+# storage for the whole organization).
+check(len(reports) == 11, "the 11 usage reports are found (%d)" % len(reports))
 for cat, t in reports:
     check("--output csv" in t["template"] and "--output text" not in t["template"],
           "%s: runs with --output csv (report commands refuse text)" % t["name"])

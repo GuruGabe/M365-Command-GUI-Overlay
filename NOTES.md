@@ -2,25 +2,40 @@
 
 ## Status
 
-- Single-file tkinter application (`M365GUI.py`), Python standard library only.
-- 35 tasks across 8 categories, plus a Custom-command mode and two guided
-  workflows: "remove all guest users" and (0.4) "copy a user's OneDrive files
-  to another user".
+- tkinter desktop app (`M365GUI.py`) plus a browser version (`m365_web.py`),
+  Python standard library only. The task catalog (`m365_catalog.py`), the
+  guided workflows (`m365_workflows.py`) and the setup facts
+  (`m365_setup.py`) are shared by both.
+- 138 tasks in 13 sections (counted 10-28-2026, v0.12), plus a Custom-command
+  mode and four guided workflows: staff hand-off, remove all guest users,
+  compromised account response, and copy a user's OneDrive files to another
+  user.
+- Search, Favorites and Recent, Pick... lists, Save results to CSV / JSON,
+  Run for each CSV row, a Connection list (v0.11), Settings > Set up the
+  CLI and Settings > Dark mode (v0.12).
 - Drives the [CLI for Microsoft 365](https://pnp.github.io/cli-microsoft365/)
-  (`m365`). All commands verified against CLI v11 with `m365 <command> --help`.
-- Windows one-folder build via `Build-EXE.bat` (bundles Tcl/Tk 9 data for
-  Python 3.14; see `extract_tcl.py`).
+  (`m365`). Commands checked against CLI v11.11 with `m365 <command> --help`.
+- Builds for Windows (`Build-EXE.bat`), macOS (.dmg) and Linux (.deb / .rpm)
+  - see the README's download table.
 - Shares its engine and design with
   [GAMGUI](https://github.com/GuruGabe/GAM-GUI-Overlay).
 
 ## Roadmap / ideas
 
-- Exchange Online tasks (mailbox settings, forwarding) - the `exo`/`outlook`
-  command names need confirming on the target CLI build first.
-- Intune device tasks; guest invitations; Conditional Access.
+- More Exchange Online tasks. Done in v0.12 (checked with `--help full` on
+  CLI v11.11): automatic replies, a user's calendars / events / mail folder.
+  The CLI's `outlook` commands have no mail-forwarding setting.
+- Who holds admin roles: 'entra pim role assignment list' / 'eligibility
+  list' need Entra ID P2 (or ID Governance). Without P2, Graph
+  'roleManagement/directory/roleAssignments?$expand=principal' works through
+  'm365 request' (only ONE $expand is allowed there; the role names need
+  'entra roledefinition list'), and 'directoryRoles?$expand=members' answered
+  500 (checked 10-28-2026). Would need a small workflow that joins the two.
+- The CLI (v11.11) has no Intune commands. Guest invitations exist (Users >
+  Invite a guest).
 - More Teams and SharePoint coverage.
-- CSV bulk-run builder; favorites; dark mode.
-- macOS/Linux builds (the source is cross-platform; needs building/testing).
+- Live tests of the tasks that change things and of the guided workflows,
+  on throwaway accounts.
 
 ## Known limitations
 
@@ -41,6 +56,60 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+
+- 10-27-2026 (v0.12): Settings > Set up the CLI (as GAMGUI 2.97 Set up GAM),
+  m365_setup.py: 1 Node.js (winget install --id OpenJS.NodeJS.LTS --exact
+  --source winget in its own console, NO --accept-*-agreements - the person
+  accepts the license there; download page off Windows), 2 npm install -g
+  @pnp/cli-microsoft365 streamed (EACCES / network hints), 3 'm365 setup'
+  (wizard, own console; app ID = 'cli config get --key clientId' GUID or
+  CLIMICROSOFT365_ENTRAAPPID), 4 'm365 login --authType browser|deviceCode'
+  (own console; never password). Auto-open once/session when account_text
+  says m365 not found / Node.js missing / nobody; after a failed task whose
+  output matches "Log in to Microsoft 365 first" / "appId is required" /
+  AADSTS expired-or-MFA codes (asked once/session). New Settings menu.
+  Tests: tests\test_v012_setup.py (passed once Python was back).
+  Browser version (same day): Set up the CLI... header button + <dialog>;
+  GET /api/setup, POST /api/setup/cli (npm job, find_m365 again), POST
+  /api/setup/login (deviceCode login job - code + URL in the output box);
+  Node.js / 'm365 setup' / browser login shown as commands to paste into a
+  terminal on the server. /api/status 'setup' = needs_window; /api/job
+  'setup' = failed job matching setup_can_fix. Tests:
+  tests\test_v012_web_setup.py.
+  Also: Settings > Dark mode (GAMGUI's palettes and clam theme; option
+  database for later Listbox / Text / Toplevel; light start leaves the
+  native colors alone - only repainted light after a dark switch, so macOS
+  dark appearance is not overridden). Saved as dark_mode in m365gui.ini.
+  Tests: tests\test_v012_dark.py. NOTES Status/Roadmap refreshed (126
+  tasks, 13 sections, 4 workflows; builds for all three OSes).
+  Six Outlook tasks (calendar list, event list with --properties, message
+  list by folderName, mailbox settings set autoReply alwaysEnabled /
+  scheduled / disabled) -> 132 tasks. Options read from 'm365 outlook ...
+  --help full' (v11.11); not live-tested yet (the auto-reply ones change a
+  mailbox - throwaway user needed). Tests: tests\test_v012_outlook.py.
+  0.12 did not go out on 10-27 (the release run could not start its
+  tests); the release script now finds Python itself. Planned for the
+  10-28 release.
+  10-28: six read-only tasks added to 0.12 (Entra policies by type, apps in
+  a Team, Teams app catalog, mailbox quota counts, OneDrive storage total,
+  organization details) -> 138 tasks. Found from a list of CLI commands no
+  task uses yet (170 in teams/entra/outlook/todo/onedrive). All run LIVE
+  read-only and OK; 'entra policy list' with no --type fails without Entra
+  ID P2 (it also reads roleManagement), so the type is required.
+  Tests: tests\test_v012_readonly_more.py.
+
+- 10-26-2026 (v0.11): Connection list (GAMGUI's Section dropdown) in the
+  desktop top bar and the browser header, from 'connection list --output
+  json' (name, connectedAs, authType, active - live shape checked 10-26; one
+  connection on the test PC). Switch = 'connection use --name' (refused while
+  a task/workflow runs; the web version only accepts a name the CLI listed);
+  afterwards status + list are read again and the group Pick... cache is
+  dropped (changes_connection: login, logout, connection use/set/remove).
+  Diagnostics +6 tasks (list/switch/rename/remove, sign in deviceCode|browser
+  with optional --connectionName, sign out). Docs check covers them. NOT
+  live-tested: switching between two real connections, sign in, sign out
+  (only one connection exists, and signing in is the admin's own step).
+- 10-26-2026: v0.10 published by the 5 PM daily release (Release-M365GUI.ps1).
 
 - 10-26-2026 (v0.10): first LIVE run of every read-only, no-typed-input task
   against the tenant (44): 33 OK. Fixed: report commands accept only

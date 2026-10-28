@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 118
-   admin tasks as fill-in forms across 13 sections (v0.7): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 138
+   admin tasks as fill-in forms across 13 sections (v0.12): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security and Diagnostics
    - plus a Custom-command mode for any m365 command.
@@ -24,6 +24,24 @@
    and removal of pasted curly quotes / invisible characters in address and
    ID boxes. Favorites and Recent are kept in m365gui_tasklists.json in the
    settings folder.
+   And (v0.12, as GAMGUI's Set up GAM): Settings > Set up the CLI (install /
+   sign in)... - 1 Node.js (winget on Windows; the download page on macOS /
+   Linux), 2 the CLI (npm install -g @pnp/cli-microsoft365), 3 the CLI's app
+   in your tenant (m365 setup), 4 sign in (web browser or a code). Steps 3-4
+   and winget open their own terminal window. It opens by itself only when
+   needed: no CLI, no Node.js, nobody signed in, or (asked once per session)
+   a command that failed because of the sign-in. The browser version has a
+   Set up the CLI... button: Install the CLI and Sign in with a code run on
+   the server; Node.js, 'm365 setup' and the browser sign-in are shown as
+   commands to paste into a terminal on the server.
+   Settings > Dark mode (v0.12, as GAMGUI): a soft dark gray, saved as
+   dark_mode in m365gui.ini.
+   And (v0.11, as GAMGUI's Section dropdown): a Connection list at the top.
+   Every account or tenant the CLI is signed in with is a saved connection;
+   choosing one runs 'm365 connection use', so every later command runs as
+   that account. It cannot be switched while a task is running. Diagnostics
+   has the matching tasks: list / switch / rename / remove connections, sign
+   in another account (code or web browser) and sign out.
 
    M365GUI is the Microsoft-world counterpart to GAMGUI (for Google Workspace).
    It holds no credentials of its own; all authority comes from your existing

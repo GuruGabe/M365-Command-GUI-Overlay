@@ -2,8 +2,8 @@
 # Script:   M365GUI.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
-# Modified: 10-26-2026
-# Version:  0.10
+# Modified: 10-27-2026
+# Version:  0.12
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -41,10 +41,13 @@ import urllib.request          # the update check (GitHub's public release API)
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, simpledialog
 
+import platform
+
 import m365_update             # macOS / Linux updater + What's new (from GAMGUI)
+import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.10"
+APP_VERSION = "0.12"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -285,7 +288,8 @@ from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
                           group_choices, SAVE_CHOICES, SAVE_FORMATS, saves_output,
                           with_output_format, dropdown_start, FORM_VALUE,
                           bulk_available, bulk_guess_column, bulk_plan, script_text,
-                          redact_secrets)
+                          redact_secrets, CONNECTION_LIST_COMMAND, connection_choices,
+                          connection_use_command, changes_connection)
 from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
                             staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
@@ -305,6 +309,40 @@ def random_password(length=16):
     chars += [secrets.choice(pool) for _ in range(length - len(chars))]
     secrets.SystemRandom().shuffle(chars)
     return "".join(chars)
+
+# =============================================================================
+# SECTION: Color themes (light / dark) - v0.12, the same as GAMGUI's
+#
+# Dark mode is a SOFT, low-contrast dark gray - not pure black on white. It
+# is applied through ttk's "clam" theme, the one ttk theme that honors custom
+# colors on Windows (the native "vista" theme ignores most of them), plus
+# direct coloring of the classic Tk widgets (the command preview and output
+# boxes, Pick... lists, pop-up windows), which do not follow ttk styles.
+# =============================================================================
+DARK_PALETTE = {
+    "bg":            "#2b2b2b",   # window and frame background
+    "fg":            "#e0e0e0",   # normal text: soft off-white, not pure white
+    "entry_bg":      "#3c3f41",   # entries, dropdowns, tree, output background
+    "select_bg":     "#4a6785",   # selection highlight: a muted blue
+    "select_fg":     "#ffffff",   # text on a selection
+    "button_bg":     "#3c3f41",   # button face
+    "button_active": "#4a4f52",   # button face while hovered/pressed
+    "disabled":      "#808080",   # disabled text
+    "trough":        "#3c3f41",   # scrollbar / progress troughs
+}
+# Light mode restores the platform-native ttk theme, so these values only
+# cover the root window and the classic Tk widgets.
+LIGHT_PALETTE = {
+    "bg":            "#f0f0f0",
+    "fg":            "#000000",
+    "entry_bg":      "#ffffff",
+    "select_bg":     "#0a64c8",
+    "select_fg":     "#ffffff",
+    "button_bg":     "#f0f0f0",
+    "button_active": "#e0e0e0",
+    "disabled":      "#a0a0a0",
+    "trough":        "#e0e0e0",
+}
 
 # =============================================================================
 # SECTION: Main window
@@ -340,8 +378,14 @@ class M365Gui(tk.Tk):
         self._update_in_progress = False
         self.favorites, self.recent = self._load_tasklists()
         self._group_cache = None             # the Pick... group list, loaded once
+        # v0.12: light (default) or dark, remembered in m365gui.ini. Keep the
+        # platform's own ttk theme so light mode restores the native look.
+        self.style = ttk.Style(self)
+        self._default_theme = self.style.theme_use()
+        self.dark_mode = self._setting("dark_mode", "false") == "true"
 
         self._build_layout()
+        self._apply_theme()                  # paint light or dark on first show
         self._build_menu()
         self._populate_tree()
         self._preselect()
@@ -370,6 +414,16 @@ class M365Gui(tk.Tk):
                                        cursor="hand2")
         self.account_label.pack(side="right", padx=12)
         self.account_label.bind("<Button-1>", lambda _e: self._refresh_account())
+        # v0.11 (GAMGUI's Section dropdown): every account the CLI is signed
+        # in with is a saved connection; choosing one here runs 'm365
+        # connection use' so every later command runs as that account.
+        self._connections = []               # [(label, name, active)]
+        self.connection_var = tk.StringVar()
+        self.connection_box = ttk.Combobox(top, textvariable=self.connection_var,
+                                           state="readonly", width=38)
+        self.connection_box.pack(side="right")
+        self.connection_box.bind("<<ComboboxSelected>>", lambda _e: self._switch_connection())
+        ttk.Label(top, text="Connection:").pack(side="right", padx=(12, 4))
 
         main = ttk.PanedWindow(self, orient="horizontal"); main.pack(fill="both", expand=True)
         left = ttk.Frame(main)
@@ -734,6 +788,7 @@ class M365Gui(tk.Tk):
         status = ttk.Label(win, text="", padding=(6, 0)); status.pack(anchor="w")
         box = tk.Listbox(win, activestyle="dotbox"); box.pack(fill="both", expand=True, padx=6, pady=4)
         values = []
+        loaded = {}                          # "connections": filled by load_connections
 
         def show(choices, note):
             if not win.winfo_exists():
@@ -745,6 +800,16 @@ class M365Gui(tk.Tk):
             status.config(text=note)
 
         def search(*_):
+            if kind == "connection":
+                # v0.11: the saved connections, read again each time (quick,
+                # and a sign-in may have added one).
+                if "connections" not in loaded:
+                    return                  # still loading; shown when it arrives
+                words = text.get().lower().split()
+                found = [(label, name) for label, name, _a in loaded["connections"]
+                         if all(w in (label + " " + name).lower() for w in words)]
+                show(found, "%d connection(s)" % len(found))
+                return
             if kind == "group":
                 if self._group_cache is None:
                     return                  # still loading; shown when it arrives
@@ -800,6 +865,19 @@ class M365Gui(tk.Tk):
                     note = "Could not load the groups: " + " ".join(out.split())[:120]
                     self.output_queue.put(lambda: show([], note))
             threading.Thread(target=load, daemon=True).start()
+        elif kind == "connection":
+            status.config(text="Loading the saved connections...")
+
+            def load_connections():
+                rc, out = self._quiet_run(CONNECTION_LIST_COMMAND)
+                data = parse_json(out) if rc == 0 else None
+                if isinstance(data, list):
+                    loaded["connections"] = connection_choices(data)
+                    self.output_queue.put(search)
+                else:
+                    note = "Could not list the connections: " + " ".join(out.split())[:120]
+                    self.output_queue.put(lambda: show([], note))
+            threading.Thread(target=load_connections, daemon=True).start()
         else:
             search()
 
@@ -813,6 +891,63 @@ class M365Gui(tk.Tk):
         # task can run at the same time.
         text = account_text(self.m365_path, self._quiet_run)
         self.output_queue.put(lambda: self.account_label.config(text=text))
+        # v0.12: once per session, open Set up the CLI when there is a clear
+        # problem (no m365, no Node.js, nobody signed in).
+        if m365_setup.needs_window(text):
+            self.output_queue.put(lambda: self._auto_open_setup(text))
+        # v0.11: then the saved connections for the Connection list. A CLI
+        # that cannot list them (not signed in, too old) leaves the list empty.
+        choices = []
+        if self.m365_path:
+            rc, out = self._quiet_run(CONNECTION_LIST_COMMAND)
+            choices = connection_choices(parse_json(out)) if rc == 0 else []
+        self.output_queue.put(lambda: self._apply_connections(choices))
+
+    # ---- Connection list (v0.11) ----------------------------------------------
+    def _active_connection_label(self):
+        return next((label for label, _name, active in self._connections if active), "")
+
+    def _apply_connections(self, choices):
+        self._connections = choices
+        self.connection_box.config(values=[label for label, _name, _active in choices])
+        self.connection_var.set(self._active_connection_label())
+
+    def _switch_connection(self):
+        # Run 'connection use' for the connection chosen in the list. Not
+        # while a task or workflow runs: its next commands would suddenly run
+        # as another account, in another tenant.
+        chosen = self.connection_var.get()
+        target = next((c for c in self._connections if c[0] == chosen), None)
+        if target is None or target[2]:
+            self.connection_var.set(self._active_connection_label())
+            return
+        if self.running_proc is not None or str(self.run_button.cget("state")) == "disabled":
+            messagebox.showinfo(APP_NAME, "A task is running. Switch the connection when it "
+                                          "has finished (or click Stop).")
+            self.connection_var.set(self._active_connection_label())
+            return
+        label, name, _active = target
+        self.account_label.config(text="Signed in as: (switching...)")
+
+        def work():
+            rc, out = self._quiet_run(connection_use_command(name))
+            if rc == 0:
+                self.output_queue.put("\nSwitched to the connection %s - every command now "
+                                      "runs as that account.\n" % label)
+                self.output_queue.put(lambda: self._after_task(["connection", "use"]))
+            else:
+                note = " ".join(out.split())[:200] or "no answer"
+                self.output_queue.put("\nCould not switch to %s: %s\n" % (label, note))
+                self.output_queue.put(self._refresh_account)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_task(self, argv):
+        # After signing in / out or changing a connection: the group list
+        # cached for Pick... may belong to another tenant now, and "Signed
+        # in as" and the Connection list must be read again.
+        if changes_connection(argv):
+            self._group_cache = None
+            self._refresh_account()
 
     def _quiet_run(self, argv, timeout=60):
         # One m365 command for the window's own checks: (returncode, output).
@@ -1037,6 +1172,8 @@ class M365Gui(tk.Tk):
                                         text=True, encoding="utf-8", errors="replace",
                                         stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
                 self.running_proc = proc
+                # v0.12: the last lines, to tell a sign-in problem (Set up the CLI).
+                recent = []
                 if save_to:
                     # Collected, then written only if the command worked - an
                     # error message must not end up in the CSV / JSON file.
@@ -1046,9 +1183,12 @@ class M365Gui(tk.Tk):
                         self.output_queue.put(save_results(save_to, text))
                     else:
                         self.output_queue.put(text)
+                        recent.append(text[-20000:])
                 else:
                     for line in proc.stdout:
                         self.output_queue.put(line)
+                        recent.append(line)
+                        del recent[:-200]
                 proc.wait()
                 if proc.returncode != 0:
                     self.output_queue.put(
@@ -1056,12 +1196,16 @@ class M365Gui(tk.Tk):
                         "sometimes shows 'Error: [object Object]'), re-run the "
                         "command in Custom command with --debug added to see "
                         "the real message.\n" % proc.returncode)
+                    if m365_setup.setup_can_fix("".join(recent)):
+                        self.output_queue.put(self._offer_setup)
                 else:
                     self.output_queue.put("\n[exit code 0]\n")
             except Exception as exc:
                 self.output_queue.put("ERROR: " + str(exc) + "\n")
             finally:
                 self.running_proc = None
+                # v0.11: signed in / out or changed a connection -> check again.
+                self.output_queue.put(lambda: self._after_task(argv))
                 self.output_queue.put(None)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1222,9 +1366,287 @@ class M365Gui(tk.Tk):
         except OSError:
             pass
 
+    # ---- v0.12: "Set up the CLI" window - Node.js, the CLI, its app, sign in ---
+    # Gabe 10-27-2026 (as GAMGUI 2.97's Set up GAM): install the CLI and sign
+    # in from a pop-up that only appears when needed. The facts are in
+    # m365_setup.py; 'm365 setup', 'm365 login' and winget run in their own
+    # terminal window (questions, a browser sign-in, a license to accept).
+    def _auto_open_setup(self, account_line):
+        if getattr(self, "_setup_offered", False):
+            return
+        self._setup_offered = True
+        if "m365 not found" in account_line:
+            reason = "M365GUI could not find the CLI for Microsoft 365 on this computer."
+        elif "Node.js" in account_line:
+            reason = "Node.js is not installed - the CLI for Microsoft 365 needs it."
+        else:
+            reason = "The CLI for Microsoft 365 is not signed in."
+        self._open_setup(reason)
+
+    def _offer_setup(self):
+        # After a command failed with a sign-in error: ask once per session.
+        if getattr(self, "_setup_error_offered", False):
+            return
+        self._setup_error_offered = True
+        if messagebox.askyesno(APP_NAME, "That looks like a sign-in problem.\n\nOpen Set "
+                               "up the CLI (set up its app, sign in again)?"):
+            self._open_setup()
+
+    def _open_setup(self, reason=""):
+        win = getattr(self, "_setup_win", None)
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            self._setup_check()
+            return
+        win = tk.Toplevel(self)
+        self._setup_win = win
+        win.title(APP_NAME + " - Set up the CLI for Microsoft 365")
+        win.transient(self)
+        body = ttk.Frame(win, padding=10)
+        body.pack(fill="both", expand=True)
+        if reason:
+            ttk.Label(body, text=reason, foreground="#b3261e", wraplength=600,
+                      justify="left").pack(anchor="w", pady=(0, 6))
+        ttk.Label(body, wraplength=600, justify="left", text=(
+            "Everything the CLI for Microsoft 365 needs, in order. Steps 3 and 4 open "
+            "their own window and a web browser: finish there, then click Check again.")
+            ).pack(anchor="w")
+        self._setup_status = {}
+
+        def row(number, title, buttons):
+            box = ttk.LabelFrame(body, text="%d. %s" % (number, title), padding=6)
+            box.pack(fill="x", pady=4)
+            status = ttk.Label(box, text="(checking...)", wraplength=580, justify="left")
+            status.pack(anchor="w")
+            line = ttk.Frame(box)
+            line.pack(anchor="w", pady=(4, 0))
+            for text, command in buttons:
+                ttk.Button(line, text=text, command=command).pack(side="left", padx=(0, 6))
+            return status
+
+        self._setup_status["node"] = row(1, "Node.js", [
+            ("Install Node.js...", self._setup_install_node)])
+        self._setup_status["cli"] = row(2, "CLI for Microsoft 365", [
+            ("Install the CLI...", self._setup_install_cli), ("Locate m365...", self._locate)])
+        self._setup_status["app"] = row(3, "The CLI's app in your tenant (m365 setup)", [
+            ("Run m365 setup", lambda: self._setup_launch(m365_setup.SETUP_COMMAND,
+                                                          "m365 setup"))])
+        self._setup_status["login"] = row(4, "Sign in", [
+            ("Sign in (web browser)", lambda: self._setup_launch(
+                m365_setup.login_command("browser"), "m365 login")),
+            ("Sign in with a code", lambda: self._setup_launch(
+                m365_setup.login_command("deviceCode"), "m365 login"))])
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Close", command=win.destroy).pack(side="right")
+        ttk.Button(buttons, text="Check again", command=self._setup_check).pack(side="right", padx=6)
+        self._setup_check()
+
+    def _setup_set(self, key, text):
+        label = getattr(self, "_setup_status", {}).get(key)
+        win = getattr(self, "_setup_win", None)
+        if label is not None and win is not None and win.winfo_exists():
+            label.config(text=text)
+
+    def _setup_check(self):
+        # Node.js, the CLI, its app ID and the sign-in - in the background.
+        for key in ("node", "cli", "app", "login"):
+            self._setup_set(key, "(checking...)")
+        if not self.m365_path:
+            # Installed a moment ago (or by hand): look again.
+            self.m365_path = find_m365(self._setting("m365_path", ""))
+            if self.m365_path:
+                self.path_label.config(text="m365: " + self.m365_path)
+        m365 = self.m365_path
+
+        def worker():
+            node = find_node(os.path.dirname(m365) if m365 else "")
+            node_version = ""
+            if node:
+                try:
+                    node_version = subprocess.run(
+                        [node, "--version"], capture_output=True, text=True, timeout=30,
+                        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout.strip()
+                except Exception:
+                    node_version = ""
+            cli_version, app_ok, account = "", False, account_text(m365, self._quiet_run)
+            if m365 and node:
+                rc, out = self._quiet_run(["version"])
+                found = re.search(r"\d+\.\d+\.\d+", out or "")
+                cli_version = found.group(0) if rc == 0 and found else ""
+                rc, out = self._quiet_run(m365_setup.CLIENT_ID_COMMAND)
+                app_ok = m365_setup.app_id_set(rc, out)
+            self.output_queue.put(lambda: self._setup_show(
+                node, node_version, m365, cli_version, app_ok, account))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _setup_show(self, node, node_version, m365, cli_version, app_ok, account):
+        changed = account != self.account_label.cget("text")
+        self._setup_set("node", "Installed: Node.js %s  (%s)" % (node_version or "?", node)
+                        if node else "Node.js was not found. The CLI runs on it - install "
+                        "it first.")
+        if m365 and cli_version:
+            self._setup_set("cli", "Installed: CLI for Microsoft 365 %s  (%s)" % (cli_version, m365))
+        elif m365:
+            self._setup_set("cli", "Found %s, but it did not answer%s." % (
+                m365, " (install Node.js first)" if not node else ""))
+        else:
+            self._setup_set("cli", "The CLI was not found. Install it (npm install -g %s), "
+                            "or Locate m365... if it is somewhere M365GUI did not look."
+                            % m365_setup.NPM_PACKAGE)
+        if app_ok:
+            self._setup_set("app", "Set up: the CLI has an app ID. Run m365 setup again only "
+                            "to switch to another app.")
+        elif m365 and cli_version:
+            self._setup_set("app", "Not set up yet. 'm365 setup' asks whether to create an "
+                            "app registration for the CLI in your tenant (a Global admin "
+                            "consents to its permissions) or to use an existing one. "
+                            "SharePoint and OneDrive tasks need it.")
+        else:
+            self._setup_set("app", "Install the CLI first.")
+        if m365_setup.signed_in(account):
+            self._setup_set("login", account + ". Sign in again to add another account "
+                            "(the Connection list switches between them).")
+        elif app_ok:
+            self._setup_set("login", "Not signed in. Sign in in the web browser, or with a "
+                            "code you type on any device.")
+        else:
+            self._setup_set("login", "Set up the CLI's app first (step 3) - signing in needs it.")
+        if changed:
+            # Signed in (or out) in the setup window: "Signed in as", the
+            # Connection list and the Pick... group list are read again.
+            self._after_task(["login"])
+
+    def _setup_launch(self, argv, title):
+        # 'm365 setup' / 'm365 login' in their own terminal window.
+        parent = getattr(self, "_setup_win", None) or self
+        if not self.m365_path:
+            messagebox.showinfo(APP_NAME, "Install the CLI first (step 2).", parent=parent)
+            return
+        try:
+            full = self._build_invocation(argv)
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, str(exc), parent=parent)
+            return
+        command = m365_setup.console_command(full, title, platform.system())
+        shown = "m365 " + " ".join(argv)
+        if not command:
+            messagebox.showinfo(APP_NAME, "M365GUI found no terminal program to open. Run "
+                                "this in a terminal:\n\n" + shown, parent=parent)
+            return
+        try:
+            subprocess.Popen(command)
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, "Could not open a terminal window: %s\n\nRun this "
+                                 "in a terminal:\n\n%s" % (exc, shown), parent=parent)
+            return
+        self._append_output("\n[Set up the CLI - launched in its own window: " + shown + "]\n"
+                            "Finish there, then click Check again in Set up the CLI.\n")
+        self._log("SETUP LAUNCH: " + shown)
+
+    def _setup_install_node(self):
+        parent = getattr(self, "_setup_win", None) or self
+        kind, what = m365_setup.node_install_plan(platform.system())
+        if kind == "download":
+            if messagebox.askyesno(APP_NAME, "Node.js is installed from its own website. "
+                                   "Open the download page?\n\n" + what
+                                   + "\n\nInstall the LTS version, then click Check again.",
+                                   parent=parent):
+                webbrowser.open(what)
+            return
+        if not messagebox.askyesno(APP_NAME + " - Install Node.js", (
+                "Install Node.js (LTS) with winget?\n\n" + " ".join(what) + "\n\nA window "
+                "opens: winget shows Node.js's license to accept, and Windows asks for "
+                "administrator approval. When it has finished, click Check again."),
+                parent=parent):
+            return
+        command = m365_setup.console_command(what, "Install Node.js", "Windows")
+        try:
+            subprocess.Popen(command)
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, "Could not start winget: %s" % exc, parent=parent)
+            return
+        self._append_output("\n[Set up the CLI - installing Node.js in its own window: "
+                            + " ".join(what) + "]\n")
+        self._log("SETUP: winget install " + m365_setup.WINGET_NODE_ID)
+
+    def _setup_install_cli(self):
+        # 'npm install -g @pnp/cli-microsoft365', its output in the output pane.
+        parent = getattr(self, "_setup_win", None) or self
+        if self.running_proc is not None or str(self.run_button.cget("state")) == "disabled":
+            messagebox.showinfo(APP_NAME, "A task is running - install the CLI when it has "
+                                "finished.", parent=parent)
+            return
+        node = find_node(os.path.dirname(self.m365_path) if self.m365_path else "")
+        npm = m365_setup.find_npm(node)
+        if not node or not npm:
+            messagebox.showinfo(APP_NAME, "Install Node.js first (step 1) - npm, which "
+                                "installs the CLI, comes with it.", parent=parent)
+            return
+        command = m365_setup.npm_install_command(npm)
+        if not messagebox.askyesno(APP_NAME + " - Install the CLI", (
+                "Install (or update) the CLI for Microsoft 365?\n\n"
+                + " ".join(quote_if_needed(a) for a in command) + "\n\nnpm downloads it "
+                "from the npm registry. It takes a minute or two."), parent=parent):
+            return
+        self.run_button.config(state="disabled")
+        self._setup_set("cli", "Installing - see the output pane...")
+        put = self.output_queue.put
+        put("\n===== INSTALL THE CLI FOR MICROSOFT 365 =====\n> "
+            + " ".join(quote_if_needed(a) for a in command) + "\n")
+        self._log("SETUP: npm install -g " + m365_setup.NPM_PACKAGE)
+
+        def worker():
+            lines = []
+            try:
+                proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, encoding="utf-8", errors="replace",
+                                        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+                self.running_proc = proc
+                for line in proc.stdout:
+                    put(line)
+                    lines.append(line)
+                    del lines[:-200]
+                proc.wait()
+                if proc.returncode == 0:
+                    put("\nThe CLI is installed.\n")
+                else:
+                    hint = m365_setup.npm_failure_hint("".join(lines))
+                    put("\nnpm stopped with exit code %d.%s\n" % (
+                        proc.returncode, (" " + hint) if hint else ""))
+            except Exception as exc:
+                put("\nERROR: " + str(exc) + "\n")
+            finally:
+                self.running_proc = None
+                put(None)
+                put(self._setup_after_cli)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _setup_after_cli(self):
+        found = find_m365("")
+        if found:
+            self.m365_path = found
+            self.path_label.config(text="m365: " + found)
+            self._save_setting("m365_path", found)
+            self._refresh_account()
+        if getattr(self, "_setup_win", None) is not None and self._setup_win.winfo_exists():
+            self._setup_check()
+
     # ---- Help menu: updates, What's new, About (v0.5, as in GAMGUI) ----------
     def _build_menu(self):
         bar = tk.Menu(self)
+        # v0.12 (as GAMGUI 2.97's Settings menu): install Node.js and the
+        # CLI, set up the CLI's app and sign in, in one window.
+        settings = tk.Menu(bar, tearoff=0)
+        settings.add_command(label="Set up the CLI (install / sign in)...",
+                             command=self._open_setup)
+        settings.add_command(label="Locate m365...", command=self._locate)
+        settings.add_separator()
+        self.dark_var = tk.BooleanVar(value=self.dark_mode)
+        settings.add_checkbutton(label="Dark mode", variable=self.dark_var,
+                                 command=self._toggle_dark)
+        bar.add_cascade(label="Settings", menu=settings)
         helpm = tk.Menu(bar, tearoff=0)
         helpm.add_command(label="Check for updates now",
                           command=lambda: self._check_updates_async(False))
@@ -1243,6 +1665,76 @@ class M365Gui(tk.Tk):
         helpm.add_command(label="About " + APP_NAME, command=self._show_about)
         bar.add_cascade(label="Help", menu=helpm)
         self.config(menu=bar)
+
+    # ---- light / dark (v0.12, as GAMGUI) -------------------------------------
+    def _apply_theme(self):
+        # Repaint in the current mode. ttk widgets are styled by class, so
+        # ones made later (forms, pop-ups) match too; the classic Tk widgets
+        # are colored directly (the two boxes) or through the option database
+        # (Pick... lists, pop-up windows and What's new, made later).
+        p = DARK_PALETTE if self.dark_mode else LIGHT_PALETTE
+        style = self.style
+        if self.dark_mode:
+            style.theme_use("clam")
+            style.configure(".", background=p["bg"], foreground=p["fg"],
+                            fieldbackground=p["entry_bg"], bordercolor=p["entry_bg"],
+                            lightcolor=p["bg"], darkcolor=p["bg"],
+                            troughcolor=p["trough"], insertcolor=p["fg"],
+                            arrowcolor=p["fg"])
+            for name in ("TFrame", "TPanedwindow", "TLabelframe"):
+                style.configure(name, background=p["bg"])
+            for name in ("TLabel", "TLabelframe.Label", "TCheckbutton"):
+                style.configure(name, background=p["bg"], foreground=p["fg"])
+            style.configure("TButton", background=p["button_bg"], foreground=p["fg"])
+            style.map("TButton",
+                      background=[("active", p["button_active"]), ("disabled", p["bg"])],
+                      foreground=[("disabled", p["disabled"])])
+            style.map("TCheckbutton", background=[("active", p["bg"])])
+            style.configure("TEntry", fieldbackground=p["entry_bg"],
+                            foreground=p["fg"], insertcolor=p["fg"])
+            style.map("TEntry", fieldbackground=[("readonly", p["entry_bg"])])
+            style.configure("TCombobox", fieldbackground=p["entry_bg"],
+                            foreground=p["fg"], background=p["button_bg"],
+                            arrowcolor=p["fg"])
+            style.map("TCombobox",
+                      fieldbackground=[("readonly", p["entry_bg"])],
+                      foreground=[("readonly", p["fg"])],
+                      selectbackground=[("readonly", p["entry_bg"])],
+                      selectforeground=[("readonly", p["fg"])])
+            style.configure("Treeview", background=p["entry_bg"],
+                            fieldbackground=p["entry_bg"], foreground=p["fg"])
+            style.map("Treeview", background=[("selected", p["select_bg"])],
+                      foreground=[("selected", p["select_fg"])])
+        else:
+            style.theme_use(self._default_theme)
+            if not getattr(self, "_theme_painted", False):
+                return      # never dark this session: keep the native colors untouched
+        self._theme_painted = True
+        for pattern, key in (("*TCombobox*Listbox.background", "entry_bg"),
+                             ("*TCombobox*Listbox.foreground", "fg"),
+                             ("*TCombobox*Listbox.selectBackground", "select_bg"),
+                             ("*TCombobox*Listbox.selectForeground", "select_fg"),
+                             ("*Listbox.background", "entry_bg"),
+                             ("*Listbox.foreground", "fg"),
+                             ("*Listbox.selectBackground", "select_bg"),
+                             ("*Listbox.selectForeground", "select_fg"),
+                             ("*Text.background", "entry_bg"),
+                             ("*Text.foreground", "fg"),
+                             ("*Text.insertBackground", "fg"),
+                             ("*Toplevel.background", "bg")):
+            self.option_add(pattern, p[key])
+        self.configure(bg=p["bg"])
+        for box in (getattr(self, "preview_box", None), getattr(self, "output_box", None)):
+            if box is not None:
+                box.configure(bg=p["entry_bg"], fg=p["fg"], insertbackground=p["fg"],
+                              selectbackground=p["select_bg"],
+                              selectforeground=p["select_fg"])
+
+    def _toggle_dark(self):
+        # Flip the mode, repaint, and remember it for next time.
+        self.dark_mode = bool(self.dark_var.get())
+        self._apply_theme()
+        self._save_setting("dark_mode", "true" if self.dark_mode else "false")
 
     def _toggle_check_updates(self):
         self.check_updates = bool(self.check_updates_var.get())

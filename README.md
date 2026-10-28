@@ -12,7 +12,7 @@ Microsoft-world counterpart to [GAMGUI](https://github.com/GuruGabe/GAM-GUI-Over
 (which does the same for Google Workspace / GAM).
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20source%3A%20macOS%2FLinux-informational)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green)
 ![Dependencies](https://img.shields.io/badge/dependencies-none%20(standard%20library)-brightgreen)
 
@@ -133,6 +133,24 @@ so you're never limited to the built-in tasks.
   description), **Favorites** (right-click a task) and **Recent** (the last 10
   tasks you ran) at the top of the list.
 - **Signed in as** at the top: the account m365 uses (click to check again).
+- **Settings > Set up the CLI (install / sign in)...** (0.12, like GAMGUI's
+  Set up GAM): Node.js (winget on Windows, the download page elsewhere), the
+  CLI (`npm install -g @pnp/cli-microsoft365`), the CLI's app in your tenant
+  (`m365 setup`) and signing in (web browser or a code) - each step shows
+  whether it is done. It opens by itself only when needed (no CLI, no
+  Node.js, nobody signed in, or a command failed because of the sign-in).
+  The browser version has a **Set up the CLI...** button at the top:
+  **Install the CLI** and **Sign in with a code** run on the server (the code
+  and web address appear in the output box); installing Node.js, `m365 setup`
+  and the browser sign-in ask questions, so it shows their commands to paste
+  into a terminal on the server.
+- **Settings > Dark mode** (0.12, as in GAMGUI) - a soft dark gray,
+  remembered for next time.
+- **Connection** list next to it (0.11, like GAMGUI's Section dropdown): every
+  account or tenant the CLI is signed in with is a saved connection - choose
+  one and every command after that runs as it. Diagnostics has the matching
+  tasks: list, switch, rename and remove connections, sign in another account
+  (with a code or in the web browser) and sign out.
 - **Pick...** next to user and group boxes - type the start of a name or
   address and choose. Users are searched in Microsoft 365 as you ask; groups
   load once per session.
@@ -218,16 +236,16 @@ walkthrough. **README.txt** is the full reference.
 | Users (Entra ID) | List (all / members / guests), get (with manager), create, reset password, rename, job title / department / office, manager, usage location, block/unblock, groups and licenses of a user, invite a guest, check a password, MFA registration report, delete, recycle bin (restore, delete for good, empty), remove all guests | [entra user](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-list/) |
 | Groups (Entra) | List, list by type (4 types), get info, create, rename / describe, list/add/remove members, make an owner, delete | [entra group](https://pnp.github.io/cli-microsoft365/cmd/entra/group/group-list/) |
 | Licenses | View all SKUs, list users with a license, assign, remove | [entra license](https://pnp.github.io/cli-microsoft365/cmd/entra/license/license-list/) |
-| Teams / M365 Groups | Microsoft 365 groups (with site address, without owners, info, members, roles, remove, deleted and restore, turn into a Team); Teams (list, a user's Teams, settings, create, archive, unarchive, delete); channels (list, add, delete, members) | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
+| Teams / M365 Groups | Microsoft 365 groups (with site address, without owners, info, members, roles, remove, deleted and restore, turn into a Team); Teams (list, a user's Teams, settings, create, archive, unarchive, delete, apps installed in a Team, the Teams app catalog); channels (list, add, delete, members) | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
 | SharePoint | List sites (all, team, communication, with OneDrives), site info, create team / communication site, delete, deleted and restore, site collection admins, lock / read-only, sharing setting, a site's recycle bin, external users, organization settings, add user to a site group | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
 | OneDrive | List every OneDrive, find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
-| Security | Sign out everywhere, sign-in activity | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
-| Diagnostics | Login status, CLI version, tenant id |
+| Security | Compromised account response, sign out everywhere, sign-in activity, Microsoft Entra policies (guest invitations, security defaults, sign-in methods, Conditional Access...) | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
+| Diagnostics | Login status, CLI version, tenant id, organization details, saved connections (list, switch, rename, remove), sign in, sign out | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
 | Roles and admin units | Admin roles, give someone a role, administrative units and their members | [roleassignment](https://pnp.github.io/cli-microsoft365/cmd/entra/roleassignment/roleassignment-add/) |
 | Service health and security | Service health, current issues, message center, security alerts, organization info, enterprise apps and their permission grants, audit log search, retention and sensitivity labels | [serviceannouncement](https://pnp.github.io/cli-microsoft365/cmd/tenant/serviceannouncement/serviceannouncement-health-list/) |
-| Outlook | Send an email, mailbox settings, meeting rooms, room lists | [outlook](https://pnp.github.io/cli-microsoft365/cmd/outlook/mail/mail-send/) |
+| Outlook | Send an email, mailbox settings, a user's calendars, calendar events and mail folders, automatic replies (on, for dates, off), meeting rooms, room lists | [outlook](https://pnp.github.io/cli-microsoft365/cmd/outlook/mail/mail-send/) |
 | Planner | A group's plans, a plan's tasks | [planner](https://pnp.github.io/cli-microsoft365/cmd/planner/plan/plan-list/) |
-| Reports (usage) | Active users, Teams, OneDrive, mail and SharePoint usage, 7 to 180 days | [tenant report](https://pnp.github.io/cli-microsoft365/cmd/tenant/report/report-activeusercounts/) | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
+| Reports (usage) | Active users, Teams, OneDrive (per account and organization total), mail, mailboxes near their size limit and SharePoint usage, 7 to 180 days | [tenant report](https://pnp.github.io/cli-microsoft365/cmd/tenant/report/report-activeusercounts/) |
 
 Plus a **Custom command** mode that accepts any `m365` command
 ([full command reference](https://pnp.github.io/cli-microsoft365/cmd/docs/)).

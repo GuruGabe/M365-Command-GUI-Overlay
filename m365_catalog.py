@@ -309,6 +309,18 @@ TASKS = {
     "teams channel member list --teamName {team} --channelName {channel} [--role {crole}] --output text",
     [F("Team display name", "team"), F("Channel name", "channel"),
      F("Only this role (blank = all)", "crole", False, choices=["", "owner", "member", "guest"])]),
+  # v0.12 (10-28-2026): options checked with the CLI's docs (v11.11) and run live.
+  T("Apps installed in a Team",
+    "The apps added to one Team (including the built-in ones such as Activity and Calling).",
+    "teams team app list --teamName {team} --output text",
+    [F("Team display name", "team")]),
+  T("Teams apps in the organization's app catalog",
+    "Apps people can add in Teams. 'organization' = apps your organization uploaded for "
+    "everyone; 'store' = Microsoft's store (thousands of apps); blank = all. An empty "
+    "result means there are none of that kind.",
+    "teams app list [--distributionMethod {dist}] --output text",
+    [F("Only these apps (blank = all)", "dist", False,
+       choices=["organization", "sideloaded", "store", ""], default="organization")]),
  ],
  "Service health and security": [
   # v0.7 (10-23-2026): options checked against the CLI's docs.
@@ -355,6 +367,57 @@ TASKS = {
     destructive=True),                     # a sent email cannot be taken back: confirm first
   T("A user's mailbox settings", "Automatic replies, time zone, language and working hours.",
     "outlook mailbox settings get --userName {email} --output text", [F("User (UPN)", "email")]),
+  # v0.12 (10-27-2026): checked against 'm365 outlook ... --help full' on
+  # CLI v11.11 (event list uses the default calendar when none is named;
+  # autoReplyStatus disabled|alwaysEnabled|scheduled; autoReplyExternal-
+  # Audience none|contactsOnly|all; date-times like 2025-01-06T11:00:00
+  # with a time zone name).
+  T("A user's calendars", "Every calendar in one user's mailbox (name, color, default).",
+    "outlook calendar list --userName {email} --output text", [F("User (UPN)", "email")]),
+  T("A user's calendar events",
+    "Events in one user's default calendar. Give a date range (YYYY-MM-DD) to see only those days.",
+    "outlook event list --userName {email} [--startDateTime {start}] [--endDateTime {end}] "
+    "--properties \"subject,start,end,organizer,isCancelled\" --output text",
+    [F("User (UPN)", "email"), F("From date (optional, YYYY-MM-DD)", "start", False),
+     F("To date (optional, YYYY-MM-DD)", "end", False)]),
+  T("Messages in a user's mail folder",
+    "The messages in one folder of a user's mailbox (e.g. inbox, sentitems, deleteditems, "
+    "archive). Needs Mail.Read for that mailbox.",
+    "outlook message list --userName {email} --folderName {folder} --output text",
+    [F("User (UPN)", "email"),
+     F("Folder", "folder", choices=["inbox", "sentitems", "drafts", "deleteditems", "archive",
+                                    "junkemail"], default="inbox")]),
+  T("Turn on automatic replies (until turned off)",
+    "Out of office for a user, starting now, until someone turns it off. The internal "
+    "message goes to people in your organization; choose who outside it gets the external one.",
+    "outlook mailbox settings set --userName {email} --autoReplyStatus alwaysEnabled "
+    "--autoReplyInternalMessage {internal} --autoReplyExternalAudience {audience} "
+    "[--autoReplyExternalMessage {external}]",
+    [F("User (UPN)", "email"), F("Message to people in your organization", "internal"),
+     F("Who outside the organization gets a reply", "audience",
+       choices=["none", "contactsOnly", "all"], default="none"),
+     F("Message to people outside (optional)", "external", False)],
+    destructive=True),
+  T("Turn on automatic replies for dates (scheduled)",
+    "Out of office between two dates and times, in the time zone you name (a Windows time "
+    "zone name such as Central Standard Time, or an IANA name such as America/Chicago).",
+    "outlook mailbox settings set --userName {email} --autoReplyStatus scheduled "
+    "--autoReplyStartDateTime {start} --autoReplyStartTimeZone {tz} "
+    "--autoReplyEndDateTime {end} --autoReplyEndTimeZone {tz} "
+    "--autoReplyInternalMessage {internal} --autoReplyExternalAudience {audience} "
+    "[--autoReplyExternalMessage {external}]",
+    [F("User (UPN)", "email"),
+     F("Start - date and time (e.g. 2026-11-02T08:00:00)", "start"),
+     F("End - date and time (e.g. 2026-11-06T17:00:00)", "end"),
+     F("Time zone (e.g. Central Standard Time)", "tz"),
+     F("Message to people in your organization", "internal"),
+     F("Who outside the organization gets a reply", "audience",
+       choices=["none", "contactsOnly", "all"], default="none"),
+     F("Message to people outside (optional)", "external", False)],
+    destructive=True),
+  T("Turn off automatic replies", "Stops a user's out-of-office replies.",
+    "outlook mailbox settings set --userName {email} --autoReplyStatus disabled",
+    [F("User (UPN)", "email")], destructive=True),
   T("Meeting rooms", "Every room mailbox.", "outlook room list --output text", []),
   T("Room lists (buildings)", "The room lists rooms are grouped in.",
     "outlook roomlist list --output text", []),
@@ -403,6 +466,16 @@ TASKS = {
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
   T("SharePoint site usage - per site", "Files, storage and activity of each SharePoint site.",
     "spo report siteusagedetail --period {period} --output csv",
+    [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
+  # v0.12 (10-28-2026): checked with the CLI's docs and run live.
+  T("Mailboxes near their size limit (counts)",
+    "For each day: how many mailboxes are under the limit, were warned, or can no longer "
+    "send / receive.",
+    "outlook report mailboxusagequotastatusmailboxcounts --period {period} --output csv",
+    [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
+  T("OneDrive storage used - whole organization",
+    "Total OneDrive storage used each day (bytes).",
+    "onedrive report usagestorage --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
  ],
  "Roles and admin units": [
@@ -522,6 +595,22 @@ TASKS = {
     "--verbose in Custom command) to see the actual reason.",
     "entra user signin list --userName {email} --output text",
     [F("User (UPN)", "email")]),
+  # v0.12 (10-28-2026): options checked with the CLI's docs (v11.11) and every
+  # listed type run live (read-only). Shown as JSON: policies are nested and
+  # the text output shows only their names. The type is required: without
+  # one the CLI also reads 'roleManagement', which needs Entra ID P2 and
+  # fails the whole command on other tenants (seen live 10-28-2026).
+  T("Microsoft Entra policies (settings)",
+    "Shows one kind of Entra policy: who may invite guests or register apps "
+    "(authorization), security defaults, sign-in methods, Conditional Access, "
+    "device registration and more. Needs the Policy.Read.All permission.",
+    "entra policy list --type {ptype}",
+    [F("Policy type", "ptype",
+       choices=["authorization", "identitySecurityDefaultsEnforcement",
+                "authenticationMethods", "authenticationStrength", "authenticationFlows",
+                "conditionalAccess", "deviceRegistration", "adminConsentRequest",
+                "permissionGrant", "activityBasedTimeout", "tokenLifetime",
+                "crossTenantAccess"], default="authorization")]),
  ],
  "OneDrive": [
   T("List every OneDrive",
@@ -554,6 +643,52 @@ TASKS = {
   T("CLI version", "Shows the CLI for Microsoft 365 version.", "version", []),
   T("Tenant ID", "Shows the tenant's directory (tenant) id.",
     "tenant id get", []),
+  # v0.12 (10-28-2026): checked with the CLI's docs and run live.
+  T("Organization (tenant) details",
+    "The organization's name, tenant id and type, and when directory sync (Entra Connect) "
+    "last ran. Blank values are not shown.",
+    "entra organization list --properties displayName,id,tenantType,countryLetterCode,"
+    "onPremisesSyncEnabled,onPremisesLastSyncDateTime --output text", []),
+  # v0.11 - connections (like GAMGUI's Section dropdown): each 'm365 login'
+  # adds a connection; 'connection use' picks the one EVERY command uses. The
+  # Connection list at the top of the window switches too.
+  T("List saved connections (accounts / tenants)",
+    "Lists every account the CLI is signed in with (a 'connection' each) and "
+    "which one is active. The Connection list at the top of the window "
+    "switches between them.",
+    "connection list --output text", []),
+  T("Switch to another connection",
+    "Makes another saved connection the active one: every command after this "
+    "runs as that account, in its tenant. Same as choosing it in the "
+    "Connection list at the top of the window.",
+    "connection use --name {connection}",
+    [F("Connection name or ID (see List saved connections)", "connection")]),
+  T("Rename a connection",
+    "Gives a saved connection an easy name (e.g. 'school' or 'test tenant') "
+    "instead of its long ID.",
+    "connection set --name {connection} --newName {newname}",
+    [F("Connection name or ID (see List saved connections)", "connection"),
+     F("New name", "newname")]),
+  T("Remove a saved connection",
+    "Forgets a saved connection and its sign-in on this computer. Nothing "
+    "changes in Microsoft 365; sign in again to get it back.",
+    "connection remove --name {connection} --force",
+    [F("Connection name or ID (see List saved connections)", "connection")],
+    destructive=True),
+  T("Sign in another account (adds a connection)",
+    "Signs the CLI in with another account or tenant and keeps the current "
+    "one as a saved connection. 'deviceCode': a web address and a code appear "
+    "in the output - open the address on any device, type the code and sign "
+    "in; 'browser': a sign-in page opens in this computer's web browser. The "
+    "new connection becomes the active one.",
+    "login --authType {authtype} [--connectionName {connname}]",
+    [F("How to sign in", "authtype", choices=["deviceCode", "browser"]),
+     F("Name for the new connection (optional) e.g. school", "connname", False)]),
+  T("Sign out",
+    "Signs the CLI out of Microsoft 365 and removes its sign-in tokens from "
+    "this computer. Run 'Sign in another account' (or 'm365 login') to sign "
+    "in again.",
+    "logout", [], destructive=True),
  ],
 }
 
@@ -847,6 +982,8 @@ def picker_kind(category, task, field):
         return None
     if field["key"] in USER_PICK_KEYS:
         return "user"
+    if field["key"] == "connection":
+        return "connection"
     if field["key"] == "team" or (category == "Groups (Entra)" and field["key"] == "name"):
         return "group"
     return None
@@ -875,6 +1012,38 @@ def people_choices(lists):
 
 GROUP_LIST_COMMAND = ["entra", "group", "list", "--properties", "displayName,mail",
                       "--output", "json"]
+
+# ---- Connections (v0.11, like GAMGUI's Section dropdown) ---------------------
+# The CLI keeps a connection for every account it was signed in with; the
+# window's Connection list is filled from 'connection list' (JSON fields:
+# name, connectedAs, authType, active - checked live 10-26-2026).
+CONNECTION_LIST_COMMAND = ["connection", "list", "--output", "json"]
+GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+def connection_choices(data):
+    # 'connection list' JSON -> [(label, name, active)] in the CLI's order.
+    # The label shows the account and the connection's name - a long ID
+    # (until renamed with 'connection set') is cut to its first 8 characters
+    # there; the full name is what 'connection use --name' takes.
+    out = []
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        name = str(item["name"])
+        short = name[:8] if GUID_RE.match(name) else name
+        who = item.get("connectedAs") or "(unknown account)"
+        out.append(("%s  [%s]" % (who, short), name, bool(item.get("active"))))
+    return out
+
+def connection_use_command(name):
+    return ["connection", "use", "--name", name]
+
+def changes_connection(argv):
+    # True for a command after which "Signed in as" and the Connection list
+    # must be checked again (signing in / out, switching, renaming, removing).
+    argv = list(argv or [])
+    return argv[:1] in (["login"], ["logout"]) or \
+        argv[:2] in (["connection", "use"], ["connection", "set"], ["connection", "remove"])
 
 def group_choices(groups, text):
     # All groups -> [(label, display name)] whose name or address CONTAINS

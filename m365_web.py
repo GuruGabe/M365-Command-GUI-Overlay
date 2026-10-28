@@ -40,7 +40,9 @@ import http.server
 import io
 import json
 import os
+import platform              # v0.12: which Node.js install to offer
 import re
+import shlex                 # v0.12: setup commands to paste
 import secrets
 import subprocess
 import sys
@@ -79,6 +81,7 @@ except Exception:
 import M365GUI as app          # noqa: E402
 import m365_catalog as cat     # noqa: E402
 import m365_workflows as wf    # noqa: E402
+import m365_setup              # noqa: E402  (v0.12: Set up the CLI)
 
 PORT = int(os.environ.get("PORT", "8080"))
 SESSION_TOKEN = secrets.token_urlsafe(32)
@@ -238,6 +241,8 @@ def run_command(job, argv, save_fmt=None, save_name="results"):
         proc.wait()
     job.rc = proc.returncode
     job.out("\n[exit code %d]\n" % proc.returncode)
+    if cat.changes_connection(argv):
+        GROUP_CACHE["groups"] = None         # v0.11: may be another tenant now
 
 
 # =============================================================================
@@ -261,6 +266,8 @@ def tasks_json():
                 "workflow": t["workflow"], "saves": cat.saves_output(t), "bulk": cat.bulk_available(t),
                 "key": cat.task_key(section, t["name"]),
                 "plan": cat.WORKFLOW_PLANS.get(t["workflow"], ""),
+                # v0.11: the page reads "Signed in as" and the connections again after it
+                "conn": cat.changes_connection(t["template"].split()),
                 "fields": [{"label": f["label"], "key": f["key"], "required": f["required"],
                             "choices": f["choices"], "start": cat.dropdown_start(f) if f["choices"] else f["default"],
                             "picker": cat.picker_kind(section, t, f)} for f in t["fields"]]})
@@ -290,7 +297,46 @@ def api_pick(data):
                 return {"error": "Could not load the groups: " + " ".join(out.split())[:200]}
             GROUP_CACHE["groups"] = items
         return {"choices": cat.group_choices(GROUP_CACHE["groups"], text)}
+    if kind == "connection":
+        choices, err = list_connections()
+        if err:
+            return {"error": err}
+        words = text.lower().split()
+        return {"choices": [[label, name] for label, name, _a in choices
+                            if all(w in (label + " " + name).lower() for w in words)]}
     return {"error": "unknown list"}
+
+
+# ---- connections (v0.11, like the desktop's Connection list) -----------------
+def list_connections():
+    # -> ([(label, name, active)], error text or "")
+    if not M365_PATH:
+        return [], "The m365 CLI was not found on this computer."
+    rc, out = capture(cat.CONNECTION_LIST_COMMAND, timeout=60)
+    items = wf.parse_json(out) if rc == 0 else None
+    if not isinstance(items, list):
+        return [], "Could not list the connections: " + " ".join(out.split())[:200]
+    return cat.connection_choices(items), ""
+
+
+def api_connection_use(data):
+    # Only a name the CLI itself listed is accepted, and not while a job
+    # runs (its next commands would run as another account).
+    name = str(data.get("name") or "")
+    with JOBS_LOCK:
+        busy = any(not job.done for job in JOBS.values())
+    if busy:
+        return {"error": "A task is running. Switch the connection when it has finished (or click Stop)."}
+    choices, err = list_connections()
+    if err:
+        return {"error": err}
+    if name not in [n for _label, n, _a in choices]:
+        return {"error": "Unknown connection."}
+    rc, out = capture(cat.connection_use_command(name), timeout=60)
+    if rc != 0:
+        return {"error": "Could not switch: " + " ".join(out.split())[:200]}
+    GROUP_CACHE["groups"] = None
+    return {"ok": True}
 
 
 def api_run(data):
@@ -361,8 +407,12 @@ def api_job(job_id, since):
         lines = job.lines[since:]
         nxt = len(job.lines)
     secret, job.secret = job.secret, None   # handed over ONCE, then forgotten
+    # v0.12: a sign-in / app problem -> the page offers Set up the CLI.
+    setup = bool(job.done and job.rc not in (0, None)
+                 and m365_setup.setup_can_fix("".join(job.lines[-200:])))
     return {"lines": lines, "next": nxt, "done": job.done, "rc": job.rc,
-            "question": job.question, "secret": secret, "file": bool(job.file)}
+            "question": job.question, "secret": secret, "file": bool(job.file),
+            "setup": setup}
 
 
 def clean_uploads():
@@ -464,8 +514,117 @@ def api_bulk_start(data):
 
 
 def api_status():
-    return {"version": app.APP_VERSION, "m365": M365_PATH,
-            "account": app.account_text(M365_PATH, lambda a: capture(a, timeout=60))}
+    account = app.account_text(M365_PATH, lambda a: capture(a, timeout=60))
+    choices = list_connections()[0] if M365_PATH else []
+    return {"version": app.APP_VERSION, "m365": M365_PATH, "account": account,
+            "setup": m365_setup.needs_window(account),          # v0.12
+            "connections": [{"label": label, "name": name, "active": active}
+                            for label, name, active in choices]}
+
+
+# ---- Set up the CLI (v0.12, the desktop's Settings > Set up the CLI) ----------
+# What this server still needs (Node.js, the CLI, the CLI's app ID, a
+# sign-in), Install the CLI (npm, a job), and Sign in with a code (a job: the
+# CLI prints a code and a web address; the person signs in in their own
+# browser). Installing Node.js (winget shows a license to accept), 'm365
+# setup' (a wizard that asks questions) and the browser sign-in need a
+# terminal, so the page shows their commands to paste into one on THIS
+# server.
+def _busy():
+    with JOBS_LOCK:
+        return any(not job.done for job in JOBS.values())
+
+
+def _node():
+    return app.find_node(os.path.dirname(M365_PATH) if M365_PATH else "")
+
+
+def _shell_words(words):
+    # Words as one line to paste into this server's terminal.
+    if os.name == "nt":
+        return " ".join('"%s"' % w if (" " in w or not w) else w for w in words)
+    return " ".join(shlex.quote(w) for w in words)
+
+
+def api_setup():
+    node = _node()
+    node_version = ""
+    if node:
+        try:
+            node_version = subprocess.run(
+                [node, "--version"], capture_output=True, text=True, timeout=30,
+                stdin=subprocess.DEVNULL, creationflags=app.NO_WINDOW).stdout.strip()
+        except Exception:
+            node_version = ""
+    account = app.account_text(M365_PATH, lambda a: capture(a, timeout=60))
+    cli_version, app_ok = "", False
+    if M365_PATH and node:
+        rc, out = capture(["version"], timeout=60)
+        found = re.search(r"\d+\.\d+\.\d+", out or "")
+        cli_version = found.group(0) if rc == 0 and found else ""
+        rc, out = capture(m365_setup.CLIENT_ID_COMMAND, timeout=60)
+        app_ok = m365_setup.app_id_set(rc, out)
+    kind, how = m365_setup.node_install_plan(platform.system())
+    m365 = M365_PATH or "m365"
+    return {"node": node, "node_version": node_version, "m365": M365_PATH,
+            "cli_version": cli_version, "app_ok": app_ok, "account": account,
+            "steps": m365_setup.needed_steps(bool(node), bool(M365_PATH), app_ok, account),
+            "node_command": _shell_words(how) if kind == "winget" else "",
+            "node_url": how if kind == "download" else "",
+            "npm_command": _shell_words(m365_setup.npm_install_command(
+                m365_setup.find_npm(node) or "npm")),
+            "commands": {"setup": _shell_words([m365] + m365_setup.SETUP_COMMAND),
+                         "browser": _shell_words([m365] + m365_setup.login_command("browser")),
+                         "code": _shell_words([m365] + m365_setup.login_command("deviceCode"))}}
+
+
+def api_setup_install_cli():
+    # 'npm install -g @pnp/cli-microsoft365' as a job; m365 is looked for again.
+    if _busy():
+        return {"error": "A task is running - install the CLI when it has finished."}
+    node = _node()
+    npm = m365_setup.find_npm(node)
+    if not node or not npm:
+        return {"error": "Install Node.js first (step 1) - npm, which installs the CLI, comes with it."}
+    command = m365_setup.npm_install_command(npm)
+
+    def target(job):
+        global M365_PATH
+        job.out("===== INSTALL THE CLI FOR MICROSOFT 365 =====\n> %s\n" % _shell_words(command))
+        lines = []
+        try:
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    stdin=subprocess.DEVNULL, creationflags=app.NO_WINDOW)
+        except (OSError, ValueError) as exc:
+            job.out("ERROR: %s\n" % exc)
+            job.rc = 1
+            return
+        job.proc = proc
+        for line in proc.stdout:
+            job.out(line)
+            lines.append(line)
+            del lines[:-200]
+        proc.wait()
+        job.rc = proc.returncode
+        if proc.returncode == 0:
+            M365_PATH = app.find_m365("") or M365_PATH
+            job.out("\nThe CLI is installed%s.\n" % ((" (" + M365_PATH + ")") if M365_PATH else ""))
+        else:
+            hint = m365_setup.npm_failure_hint("".join(lines))
+            job.out("\nnpm stopped with exit code %d.%s\n" % (proc.returncode, (" " + hint) if hint else ""))
+    return {"job": start_job(target).id}
+
+
+def api_setup_login():
+    # 'm365 login --authType deviceCode' as a job: the CLI prints the web
+    # address and code; the person signs in in their own browser.
+    if not M365_PATH:
+        return {"error": "Install the CLI first (step 2)."}
+    if _busy():
+        return {"error": "A task is running - sign in when it has finished."}
+    argv = m365_setup.login_command("deviceCode")
+    return {"job": start_job(lambda job: run_command(job, argv)).id}
 
 
 # =============================================================================
@@ -516,6 +675,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, tasks_json())
         elif url.path == "/api/status":
             self._send(200, api_status())
+        elif url.path == "/api/setup":                          # v0.12
+            self._send(200, api_setup())
         elif url.path == "/api/job":
             try:
                 since = int((query.get("since") or ["0"])[0])
@@ -565,6 +726,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/run": lambda: api_run(data),
             "/api/workflow/start": lambda: api_workflow(data),
             "/api/pick": lambda: api_pick(data),
+            "/api/connection/use": lambda: api_connection_use(data),
+            "/api/setup/cli": api_setup_install_cli,                 # v0.12
+            "/api/setup/login": api_setup_login,                     # v0.12
             "/api/job/answer": lambda: {"ok": bool(JOBS.get(data.get("job")) and
                                                    JOBS[data["job"]].answer(data.get("ok"), str(data.get("typed") or "")))},
             "/api/job/stop": lambda: (JOBS[data["job"]].stop() or {"ok": True}) if data.get("job") in JOBS
@@ -614,7 +778,9 @@ dialog{border:1px solid var(--line);border-radius:6px;background:var(--bg);color
 dialog select{height:220px} .note{color:var(--muted);font-size:13px}
 @media (max-width:760px){main{display:block} nav{width:auto;max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<header><b>M365GUI __VERSION__</b><span id="acct">Signed in as: (checking...)</span></header>
+<header><b>M365GUI __VERSION__</b><span id="acct">Signed in as: (checking...)</span>
+<label for="conn" style="margin:0;font-weight:normal">Connection:</label><select id="conn" style="width:auto;max-width:360px"></select>
+<button id="setupbtn">Set up the CLI...</button></header>
 <main><nav><input id="q" type="text" placeholder="Search tasks..." aria-label="Search tasks"><div id="tree"></div></nav>
 <section><h3 id="title">Select a task on the left.</h3><div id="desc"></div><div id="form"></div>
 <div id="previewbox"><label>Command preview</label><pre id="preview"></pre></div>
@@ -635,6 +801,8 @@ dialog select{height:220px} .note{color:var(--muted);font-size:13px}
 <label>Test run - only the first ... rows (blank = every row)</label><input id="bulklimit" type="text" style="max-width:120px">
 <p id="bulknote" class="note"></p><div class="bar"><button id="bulkfirst">Show the first row's command</button>
 <button class="primary" id="bulkgo">Run</button><button id="bulkcancel">Cancel</button></div></dialog>
+<dialog id="setupdlg" style="max-width:760px"><h4>Set up the CLI for Microsoft 365</h4><p id="setupwhy" class="note"></p><div id="setupbody">Checking this server...</div>
+<div class="bar"><button id="setupcheck">Check again</button><button class="primary" id="setupclose">Close</button></div></dialog>
 <script>
 const TOKEN="__TOKEN__"; const $=id=>document.getElementById(id);
 let SECTIONS=[], CUR=null, JOB=null, SINCE=0, BULKPATH="";
@@ -686,9 +854,47 @@ async function follow(id){JOB=id;SINCE=0;$("run").disabled=true;$("stop").disabl
     if(s.lines.length)out(s.lines.join(""));SINCE=s.next;
     if(s.secret)showSecret(s.secret);
     if(s.question&&!$("askdlg").open)ask(id,s.question);
-    if(s.done){if(s.file){$("dl").style.display="";$("dl").onclick=()=>download(id)}break}
+    if(s.done){FOLLOWRC=s.rc;if(s.file){$("dl").style.display="";$("dl").onclick=()=>download(id)}if(s.setup)offerSetup();break}
     await new Promise(r=>setTimeout(r,500))}
-  JOB=null;$("run").disabled=false;$("stop").disabled=true}
+  JOB=null;$("run").disabled=false;$("stop").disabled=true;
+  if(CUR&&(CUR.custom?/^(m365\s+)?(login|logout|connection\s+(use|set|remove))\b/i.test($("custom").value.trim()):CUR.t.conn))refreshAcct()}
+let CONNS=[];
+async function refreshAcct(){$("acct").textContent="Signed in as: (checking...)";const s=await getj("/api/status");$("acct").textContent=s.account;
+  if(s.setup&&!SETUPASKED){SETUPASKED=true;showSetup("Something the CLI needs is missing on this server.")}
+  CONNS=s.connections||[];const c=$("conn");c.innerHTML="";
+  CONNS.forEach(x=>{const o=document.createElement("option");o.value=x.name;o.textContent=x.label;if(x.active)o.selected=true;c.appendChild(o)})}
+async function switchConn(){const c=$("conn"),now=CONNS.find(x=>x.active);if(now&&c.value===now.name)return;
+  if(JOB){out("\n(A task is running. Switch the connection when it has finished, or click Stop.)\n");if(now)c.value=now.name;return}
+  $("acct").textContent="Signed in as: (switching...)";const r=await api("/api/connection/use",{name:c.value});
+  out(r.error?"\n(Could not switch: "+r.error+")\n":"\nSwitched to the connection "+c.options[c.selectedIndex].textContent+" - every command now runs as that account.\n");refreshAcct()}
+// v0.12: Set up the CLI - what this server still needs (GET /api/setup).
+// Install the CLI and Sign in with a code run here as jobs (their output in
+// the output box); installing Node.js, 'm365 setup' and the browser sign-in
+// ask questions, so the dialog shows their commands to paste into a terminal
+// on the server. Opens by itself once when something is missing, and is
+// offered once after a sign-in error.
+let SETUPASKED=false,FOLLOWRC=null;
+function offerSetup(){if(SETUPASKED||$("setupdlg").open)return;SETUPASKED=true;
+  if(confirm("This looks like a sign-in or CLI app problem. Open Set up the CLI to fix it?"))showSetup("")}
+async function showSetup(why){$("setupwhy").textContent=why||"";$("setupbody").textContent="Checking this server...";
+  if(!$("setupdlg").open)$("setupdlg").showModal();
+  const s=await getj("/api/setup");
+  const box=(title,state,more)=>"<label>"+esc(title)+"</label><div>"+esc(state)+"</div>"+(more||"");
+  const cmd=t=>"<pre style=\"user-select:all;margin:4px 0\">"+esc(t)+"</pre>";
+  let h=box("1. Node.js (the CLI runs on it)",s.node?"Installed: "+(s.node_version||"?")+" ("+s.node+")":"Not found on this server.",
+    s.node?"":(s.node_command?"<p class=\"note\">Paste into a terminal on this server (winget shows Node.js's license and asks for administrator approval):</p>"+cmd(s.node_command)
+      :"<p class=\"note\">Install the LTS version from <a href=\""+esc(s.node_url)+"\" target=\"_blank\" rel=\"noopener\">"+esc(s.node_url)+"</a> on this server.</p>"));
+  h+=box("2. The CLI for Microsoft 365",s.m365?(s.cli_version?"Installed: "+s.cli_version+" ("+s.m365+")":"Found "+s.m365+", but it did not answer."):"Not found on this server.",
+    "<div class=\"bar\"><button id=\"setupcli\">"+(s.m365?"Update the CLI":"Install the CLI")+"</button></div><p class=\"note\">Runs: "+esc(s.npm_command)+"</p>");
+  h+=box("3. The CLI's own app (m365 setup)",s.app_ok?"Set.":"Not set yet - the CLI needs an Entra app before anyone can sign in.",
+    "<p class=\"note\">A wizard that asks questions (create an app registration - a Global admin consents - or use an existing one). Paste into a terminal on this server:</p>"+cmd(s.commands.setup));
+  h+=box("4. Sign in",s.account,
+    "<div class=\"bar\"><button id=\"setupcode\">Sign in with a code</button></div><p class=\"note\">Shows a web address and a code in the output box; sign in there in your own browser. Or sign in with a browser on the server, in a terminal:</p>"+cmd(s.commands.browser));
+  $("setupbody").innerHTML=h;
+  const job=async(path)=>{const r=await api(path,{});if(r.error){alert(r.error);return}$("setupdlg").close();FOLLOWRC=null;await follow(r.job);refreshAcct();
+    if(FOLLOWRC===0)showSetup("Done - here is what is still needed, if anything.")};   // a failure stays readable in the output box
+  $("setupcli").onclick=()=>{if(confirm("Install (or update) the CLI for Microsoft 365 on this server?\n\n"+s.npm_command+"\n\nnpm downloads it from the npm registry. It takes a minute or two."))job("/api/setup/cli")};
+  $("setupcode").onclick=()=>job("/api/setup/login")}
 function ask(id,q){$("asktext").textContent=q.text;$("asktyped").style.display=q.typed?"":"none";$("askword").value="";
   $("askyes").onclick=async()=>{$("askdlg").close();await api("/api/job/answer",{job:id,ok:true,typed:$("askword").value})};
   $("askno").onclick=async()=>{$("askdlg").close();await api("/api/job/answer",{job:id,ok:false})};$("askdlg").showModal()}
@@ -700,7 +906,7 @@ async function download(id){const r=await fetch("/api/job/file?job="+encodeURICo
   const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name.replace(/"$/,"");a.click();URL.revokeObjectURL(a.href)}
 let PICKEL=null,PICKKIND="";
 function pick(kind,el){PICKEL=el;PICKKIND=kind;$("picktitle").textContent="Pick a "+kind;$("picktext").value=el.value;$("picklist").innerHTML="";
-  $("picknote").textContent=kind==="user"?"Type the start of a name or address, then Search.":"Loading the groups (once)...";$("pickdlg").showModal();if(kind==="group")pickSearch()}
+  $("picknote").textContent=kind==="user"?"Type the start of a name or address, then Search.":kind==="connection"?"Loading the saved connections...":"Loading the groups (once)...";$("pickdlg").showModal();if(kind!=="user")pickSearch()}
 async function pickSearch(){const r=await api("/api/pick",{kind:PICKKIND,text:$("picktext").value});const l=$("picklist");l.innerHTML="";
   if(r.error){$("picknote").textContent=r.error;return}
   r.choices.forEach(([label,value])=>{const o=document.createElement("option");o.textContent=label;o.value=value;l.appendChild(o)});
@@ -725,12 +931,13 @@ async function bulkStart(preview){const body={cat:CUR.sec,idx:CUR.t.idx,path:BUL
 $("q").oninput=drawTree;$("run").onclick=run;$("stop").onclick=()=>JOB&&api("/api/job/stop",{job:JOB});
 $("clear").onclick=()=>$("out").textContent="";$("bulk").onclick=bulkOpen;$("bulkfile").onchange=bulkRead;
 $("bulkfirst").onclick=()=>bulkStart(true);$("bulkgo").onclick=()=>bulkStart(false);$("bulkcancel").onclick=()=>$("bulkdlg").close();
-$("picksearch").onclick=pickSearch;$("picktext").onkeydown=e=>{if(e.key==="Enter")pickSearch()};$("picktext").oninput=()=>{if(PICKKIND==="group")pickSearch()};
+$("picksearch").onclick=pickSearch;$("picktext").onkeydown=e=>{if(e.key==="Enter")pickSearch()};$("picktext").oninput=()=>{if(PICKKIND!=="user")pickSearch()};
 $("pickok").onclick=()=>{const v=$("picklist").value;if(v){PICKEL.value=v;build()}$("pickdlg").close()};$("picklist").ondblclick=$("pickok").onclick;
 $("pickcancel").onclick=()=>$("pickdlg").close();
 $("fav").onclick=()=>{if(!CUR||CUR.custom)return;let f=store("m365web.fav");f=f.includes(CUR.t.key)?f.filter(k=>k!==CUR.t.key):f.concat([CUR.t.key]);store("m365web.fav",f);openTask(CUR.sec,CUR.t)};
-$("acct").onclick=async()=>{$("acct").textContent="Signed in as: (checking...)";$("acct").textContent=(await getj("/api/status")).account};
-(async()=>{SECTIONS=await getj("/api/tasks");drawTree();$("acct").textContent=(await getj("/api/status")).account})();
+$("acct").onclick=refreshAcct;$("conn").onchange=switchConn;
+$("setupbtn").onclick=()=>showSetup("");$("setupcheck").onclick=()=>showSetup("");$("setupclose").onclick=()=>$("setupdlg").close();
+(async()=>{SECTIONS=await getj("/api/tasks");drawTree();refreshAcct()})();
 </script></body></html>
 """
 

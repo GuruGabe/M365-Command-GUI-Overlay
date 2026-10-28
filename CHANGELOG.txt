@@ -1,6 +1,79 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-28-2026  v0.12 SET UP THE CLI: NODE.JS, THE CLI, ITS APP, SIGN IN.
+                  - New Settings > Set up the CLI (install / sign in)... (as
+                    GAMGUI 2.97's Set up GAM), in order:
+                    1 Node.js - Windows: installed with winget (its window
+                    shows Node.js's license to accept, and Windows asks for
+                    administrator approval); macOS / Linux: the download
+                    page. 2 The CLI - npm install -g @pnp/cli-microsoft365,
+                    its output in the window. 3 The CLI's app in your tenant
+                    - 'm365 setup' (create an app registration, a Global
+                    admin consents, or use an existing one; SharePoint and
+                    OneDrive need it). 4 Sign in - in the web browser or
+                    with a code. Each step shows whether it is done.
+                  - 'm365 setup', 'm365 login' and winget open their own
+                    terminal window (Windows console, macOS Terminal, the
+                    Linux desktop's terminal).
+                  - The window opens by itself only when needed: no CLI, no
+                    Node.js, or nobody signed in - and (asked once per
+                    session) after a command failed with "Log in to
+                    Microsoft 365 first", "appId is required" or an expired
+                    sign-in.
+                  - A new Settings menu also has Locate m365...
+                  - The browser version (m365_web) has it too: a Set up the
+                    CLI... button at the top. Install the CLI and Sign in
+                    with a code run on the server (the code and web address
+                    appear in the output box); Node.js, 'm365 setup' and the
+                    browser sign-in are shown as commands to paste into a
+                    terminal on the server. Opens by itself when something
+                    is missing; offered once after a sign-in error.
+                  - Six new Outlook tasks: a user's calendars, a user's
+                    calendar events (optional date range), messages in a
+                    user's mail folder, and automatic replies - turn on until
+                    turned off, turn on for dates (scheduled, with a time
+                    zone), turn off. The three that change something ask
+                    first. Options checked against the CLI's own help.
+                  - Six new read-only tasks (10-28-2026, checked against the
+                    CLI's docs and run against a real tenant): Microsoft
+                    Entra policies (Security; one type at a time - with no
+                    type the CLI also reads roleManagement, which needs
+                    Entra ID P2, and the whole command failed), Apps
+                    installed in a Team and the Teams app catalog (Teams /
+                    M365 Groups), Mailboxes near their size limit and
+                    OneDrive storage used for the whole organization
+                    (Reports), Organization (tenant) details (Diagnostics).
+                    138 tasks.
+                  - New Settings > Dark mode (as GAMGUI's): a soft dark
+                    gray, remembered for next time. Light mode keeps the
+                    computer's own look.
+                  - Tests: tests\test_v012_setup.py,
+                    tests\test_v012_web_setup.py, tests\test_v012_dark.py,
+                    tests\test_v012_outlook.py,
+                    tests\test_v012_readonly_more.py.
+10-26-2026  v0.11 SWITCH BETWEEN ACCOUNTS AND TENANTS (CONNECTIONS).
+                  - New Connection list at the top of the window, next to
+                    "Signed in as" (like GAMGUI's Section dropdown). The CLI
+                    keeps a saved connection for every account it was signed
+                    in with; choosing one here makes it the active one, so
+                    every command after that runs as that account, in its
+                    tenant. It cannot be switched while a task or guided
+                    workflow is running (its next commands would run as
+                    another account).
+                  - After a switch, sign-in or sign-out, "Signed in as" and
+                    the list are read again, and the Pick... group list is
+                    loaded fresh (it belonged to the other tenant).
+                  - Diagnostics: List saved connections, Switch to another
+                    connection, Rename a connection, Remove a saved
+                    connection (asks first), Sign in another account (with a
+                    code shown in the output, or in this computer's web
+                    browser; optional name) and Sign out (asks first). The
+                    connection boxes have a Pick... list.
+                  - The browser version (m365_web.py) has the same list; it
+                    only switches to a connection the CLI itself listed.
+                  - Tests: tests\test_v011_connections.py,
+                    tests\test_v011_web_connections.py.
 10-26-2026  v0.10 FIXES FROM THE FIRST LIVE RUN AGAINST A REAL TENANT.
                   - Every read-only task without typed boxes was run against
                     a real Microsoft 365 tenant (44 tasks): 33 worked at once.
