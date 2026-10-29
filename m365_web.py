@@ -394,6 +394,9 @@ def api_workflow(data):
                         "saved in any log.)\n")
             wf.compromised_response(capture, job.out, job.ask, job.cancelled, values, records,
                                     show_secret, app.random_password)
+        elif name == "admin_roles":          # v0.13: read-only, asks nothing
+            os.makedirs(records, exist_ok=True)
+            wf.admin_roles(capture, job.out, job.cancelled, values, records)
         else:
             job.out("Unknown workflow.\n")
     return {"job": start_job(target).id}

@@ -1,6 +1,27 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-29-2026  v0.13 WHO HOLDS ADMIN ROLES.
+                  - New guided, read-only task in Roles and admin units: Who
+                    holds admin roles. Lists every person and app with a
+                    Microsoft Entra admin role, by role (Global
+                    Administrators first), and points out what is worth a
+                    second look: more than four or fewer than two Global
+                    Administrators (people, not apps), an account with 10 or
+                    more roles, a blocked account that still holds a role.
+                    Saves admin-roles.csv in Records\AdminRoles_... . Asks
+                    nothing and changes nothing; desktop and browser.
+                  - Works without Microsoft Entra ID P2: the CLI's 'entra
+                    pim role assignment list' needs P2, so it reads
+                    Microsoft Graph's roleManagement/directory/
+                    roleAssignments?$expand=principal through 'm365 request'
+                    (following every next page - 'm365 request' does not),
+                    then the role names. Two hidden built-in roles that the
+                    role list leaves out are read one at a time by id.
+                    Checked live (read-only) on 10-28-2026: 101 assignments,
+                    every role named.
+                  - Tests: tests\test_v013_admin_roles.py,
+                    tests\test_v013_web_admin_roles.py.
 10-28-2026  v0.12 SET UP THE CLI: NODE.JS, THE CLI, ITS APP, SIGN IN.
                   - New Settings > Set up the CLI (install / sign in)... (as
                     GAMGUI 2.97's Set up GAM), in order:

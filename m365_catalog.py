@@ -479,6 +479,15 @@ TASKS = {
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
  ],
  "Roles and admin units": [
+  # ---- v0.13 (10-28-2026): guided, read-only (m365_workflows.admin_roles) ----
+  T("Who holds admin roles",
+    "Every person and app that holds a Microsoft Entra admin role, by role - Global "
+    "Administrators first - and what is worth a second look: too many or too few Global "
+    "Administrators, an account with many roles, a blocked account that still holds one. "
+    "Changes nothing; a CSV is saved in the Records folder. Works without Entra ID P2 "
+    "(reads Microsoft Graph); needs RoleManagement.Read.Directory or Directory.Read.All.",
+    "", [F("Include apps (service principals)", "apps", choices=["Yes", "No"], default="Yes")],
+    workflow="admin_roles"),
   # v0.7 (10-23-2026): options checked against the CLI's docs.
   T("List admin roles", "Every Microsoft Entra admin role (Global Administrator, User "
     "Administrator...).", "entra roledefinition list --output text", []),
@@ -707,6 +716,10 @@ WORKFLOW_PLANS = {
     "compromised": "Workflow: ask you -> block sign-in -> sign out everywhere -> new random "
                    "password (shown once) -> save evidence (sign-ins, MFA methods, groups, "
                    "licenses) and NEXT-STEPS.txt in the Records folder. Click Run to start.",
+    "admin_roles": "Workflow (read-only): read every admin role assignment from Microsoft "
+                   "Graph -> look up the role names -> list them by role with notes -> save "
+                   "admin-roles.csv in the Records folder. Nothing is changed. Click Run to "
+                   "start.",
 }
 
 # =============================================================================

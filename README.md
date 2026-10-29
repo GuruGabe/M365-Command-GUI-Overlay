@@ -118,6 +118,14 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
   window - never in the output or a log), then saves evidence (sign-ins, MFA
   methods, groups, licenses) and `NEXT-STEPS.txt` for what only the admin
   centers can do (inbox rules, MFA methods, sent mail, app consents).
+- **Who holds admin roles** (Roles and admin units, 0.13, read-only): every
+  person and app with a Microsoft Entra admin role, by role (Global
+  Administrators first), with notes on what is worth a second look - more
+  than four or fewer than two Global Administrators, an account with ten or
+  more roles, a blocked account that still holds a role. Saves
+  `admin-roles.csv`. Works without Entra ID P2 (the CLI's `entra pim`
+  commands need it): it reads Microsoft Graph's role assignments with
+  `m365 request`. Needs RoleManagement.Read.Directory or Directory.Read.All.
 - Records go to the **Records** folder in the settings folder.
 
 ### Security
@@ -241,7 +249,7 @@ walkthrough. **README.txt** is the full reference.
 | OneDrive | List every OneDrive, find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
 | Security | Compromised account response, sign out everywhere, sign-in activity, Microsoft Entra policies (guest invitations, security defaults, sign-in methods, Conditional Access...) | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
 | Diagnostics | Login status, CLI version, tenant id, organization details, saved connections (list, switch, rename, remove), sign in, sign out | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
-| Roles and admin units | Admin roles, give someone a role, administrative units and their members | [roleassignment](https://pnp.github.io/cli-microsoft365/cmd/entra/roleassignment/roleassignment-add/) |
+| Roles and admin units | Who holds admin roles (guided, read-only), admin roles, give someone a role, administrative units and their members | [roleassignment](https://pnp.github.io/cli-microsoft365/cmd/entra/roleassignment/roleassignment-add/) |
 | Service health and security | Service health, current issues, message center, security alerts, organization info, enterprise apps and their permission grants, audit log search, retention and sensitivity labels | [serviceannouncement](https://pnp.github.io/cli-microsoft365/cmd/tenant/serviceannouncement/serviceannouncement-health-list/) |
 | Outlook | Send an email, mailbox settings, a user's calendars, calendar events and mail folders, automatic replies (on, for dates, off), meeting rooms, room lists | [outlook](https://pnp.github.io/cli-microsoft365/cmd/outlook/mail/mail-send/) |
 | Planner | A group's plans, a plan's tasks | [planner](https://pnp.github.io/cli-microsoft365/cmd/planner/plan/plan-list/) |
@@ -404,7 +412,7 @@ xattr -dr com.apple.quarantine dist/M365GUI
 |------|---------|
 | `M365GUI.py` | The application window (standard library only) |
 | `m365_catalog.py` | The task catalog and command builder, plus search, Pick..., CSV-row and script helpers |
-| `m365_workflows.py` | Guided workflows (OneDrive copy, staff hand-off, compromised account, remove all guests) |
+| `m365_workflows.py` | Guided workflows (OneDrive copy, staff hand-off, compromised account, remove all guests, who holds admin roles) |
 | `m365_web.py` | The browser version |
 | `m365_update.py` | macOS / Linux in-app updater and What's new (from GAMGUI) |
 | `updatem365gui.ps1` | Windows updater (shipped inside the Windows builds) |

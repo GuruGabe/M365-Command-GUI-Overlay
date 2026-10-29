@@ -6,10 +6,10 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 138 tasks in 13 sections (counted 10-28-2026, v0.12), plus a Custom-command
-  mode and four guided workflows: staff hand-off, remove all guest users,
-  compromised account response, and copy a user's OneDrive files to another
-  user.
+- 139 tasks in 13 sections (counted 10-28-2026, v0.13), plus a Custom-command
+  mode and five guided workflows: staff hand-off, remove all guest users,
+  compromised account response, copy a user's OneDrive files to another
+  user, and who holds admin roles (read-only).
 - Search, Favorites and Recent, Pick... lists, Save results to CSV / JSON,
   Run for each CSV row, a Connection list (v0.11), Settings > Set up the
   CLI and Settings > Dark mode (v0.12).
@@ -25,12 +25,8 @@
 - More Exchange Online tasks. Done in v0.12 (checked with `--help full` on
   CLI v11.11): automatic replies, a user's calendars / events / mail folder.
   The CLI's `outlook` commands have no mail-forwarding setting.
-- Who holds admin roles: 'entra pim role assignment list' / 'eligibility
-  list' need Entra ID P2 (or ID Governance). Without P2, Graph
-  'roleManagement/directory/roleAssignments?$expand=principal' works through
-  'm365 request' (only ONE $expand is allowed there; the role names need
-  'entra roledefinition list'), and 'directoryRoles?$expand=members' answered
-  500 (checked 10-28-2026). Would need a small workflow that joins the two.
+- Admin roles: done in v0.13 (Who holds admin roles). Still open: roles
+  that are only ELIGIBLE (PIM) need Entra ID P2 to read.
 - The CLI (v11.11) has no Intune commands. Guest invitations exist (Users >
   Invite a guest).
 - More Teams and SharePoint coverage.
@@ -56,6 +52,22 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 10-28-2026: v0.12 published by the 5 PM daily release (Release-M365GUI.ps1).
+
+- 10-28-2026 (v0.13): Who holds admin roles (guided, read-only;
+  m365_workflows.admin_roles). 'entra pim role assignment list' /
+  'eligibility list' need Entra ID P2 ("The tenant needs to have Microsoft
+  Entra ID P2 or Microsoft Entra ID Governance license"), so it reads Graph
+  through 'm365 request': roleAssignments?$expand=principal (a second
+  $expand -> 400; 'directoryRoles?$expand=members' -> 500), paged by
+  @odata.nextLink (request does not page), then roleDefinitions; a few
+  hidden built-in roles are missing from that list and are read by id.
+  Notes: Global Administrators counted as PEOPLE (apps apart) - >4 or <2;
+  10+ roles on one account; blocked account with a role. CSV in
+  Records\AdminRoles_tenant_<stamp>. Built in a copy while the 0.12 release
+  was pending, live run read-only OK (101 assignments, 5 calls, every role
+  named). Tests: tests\test_v013_admin_roles.py (fake Graph: 2 pages, a
+  hidden role, apps on/off, 403, Stop).
 
 - 10-27-2026 (v0.12): Settings > Set up the CLI (as GAMGUI 2.97 Set up GAM),
   m365_setup.py: 1 Node.js (winget install --id OpenJS.NodeJS.LTS --exact

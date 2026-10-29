@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 138
-   admin tasks as fill-in forms across 13 sections (v0.12): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 139
+   admin tasks as fill-in forms across 13 sections (v0.13): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security and Diagnostics
    - plus a Custom-command mode for any m365 command.
@@ -111,6 +111,14 @@
    These hold personal data - keep them with the hand-over / incident record
    and delete them when no longer needed. A new password is NEVER written to
    any of them or to the log.
+
+   WHO HOLDS ADMIN ROLES (Roles and admin units, v0.13): read-only - asks
+   nothing and changes nothing. Lists every person and app with a Microsoft
+   Entra admin role, by role, with notes (too many / too few Global
+   Administrators, an account with 10+ roles, a blocked account that still
+   holds a role) and saves admin-roles.csv in a Records\AdminRoles_... folder.
+   Works without Entra ID P2. Needs RoleManagement.Read.Directory or
+   Directory.Read.All. The CSV names admins - delete it when done.
 
    COPY A USER'S ONEDRIVE FILES TO ANOTHER USER (OneDrive section, v0.4):
      - Copies EVERYTHING in the From user's OneDrive into a new folder in the

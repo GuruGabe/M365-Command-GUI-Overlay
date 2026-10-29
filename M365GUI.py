@@ -2,8 +2,8 @@
 # Script:   M365GUI.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
-# Modified: 10-27-2026
-# Version:  0.12
+# Modified: 10-28-2026
+# Version:  0.13
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.12"
+APP_VERSION = "0.13"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -293,7 +293,7 @@ from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
 from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
                             staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
-                            remove_all_guests)
+                            remove_all_guests, admin_roles)
 
 def random_password(length=16):
     # A new password for a compromised account: letters, digits and symbols
@@ -558,11 +558,12 @@ class M365Gui(tk.Tk):
         self._save_tasklists()
         self._refresh_special_nodes()
 
-    # ---- Staff hand-off / compromised account (v0.8) --------------------------
+    # ---- Staff hand-off / compromised account (v0.8), admin roles (v0.13) -------
     def _run_record_workflow(self, name):
-        # The two workflows that keep a record folder in RECORDS_DIR. They ask
+        # The workflows that keep a record folder in RECORDS_DIR. They ask
         # their one question through _ask_yesno; the new password (compromised)
         # goes to _show_secret on the window's thread - never to the output.
+        # admin_roles only reads, so it asks nothing.
         self.workflow_cancel = False
         self.run_button.config(state="disabled")
         values = self._collect()
@@ -578,6 +579,9 @@ class M365Gui(tk.Tk):
                 if name == "staff_handoff":
                     staff_handoff(self._capture, self.output_queue.put, self._ask_yesno,
                                   lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "admin_roles":
+                    admin_roles(self._capture, self.output_queue.put,
+                                lambda: self.workflow_cancel, values, RECORDS_DIR)
                 else:
                     compromised_response(self._capture, self.output_queue.put, self._ask_yesno,
                                          lambda: self.workflow_cancel, values, RECORDS_DIR,
@@ -1134,7 +1138,8 @@ class M365Gui(tk.Tk):
             self._run_remove_guests(); return
         if self.current_task and self.current_task.get("workflow") == "onedrive_transfer":
             self._run_onedrive_transfer(); return
-        if self.current_task and self.current_task.get("workflow") in ("staff_handoff", "compromised"):
+        if self.current_task and self.current_task.get("workflow") in ("staff_handoff", "compromised",
+                                                                        "admin_roles"):
             self._run_record_workflow(self.current_task["workflow"]); return
 
         got = self._preview_argv()

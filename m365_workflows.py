@@ -2,7 +2,7 @@
 # Script:   m365_workflows.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  10-23-2026 (moved out of M365GUI.py, v0.6)
-# Modified: 10-23-2026
+# Modified: 10-28-2026 (v0.13: Who holds admin roles - read-only)
 #
 # Purpose:
 #   M365GUI's guided workflows - tasks that run several m365 commands in a
@@ -551,4 +551,152 @@ def remove_all_guests(run, out, confirm_delete, cancelled):
             result["removed"] += 1
     out("\n===== DONE: removed %d of %d =====\n" % (result["removed"], len(guests)))
     result["ok"] = result["removed"] == len(guests)
+    return result
+
+# =============================================================================
+# SECTION: Who holds admin roles (v0.13, 10-28-2026) - read-only.
+#   'entra pim role assignment list' needs Microsoft Entra ID P2, so this
+#   reads Microsoft Graph through 'm365 request' instead (works on every
+#   tenant, checked live 10-28-2026):
+#     roleManagement/directory/roleAssignments?$expand=principal
+#   (only ONE $expand is allowed there - adding roleDefinition answers 400),
+#   then the role names from roleDefinitions. A few built-in roles (e.g.
+#   'Email Verified User Creator') are missing from that list but can be
+#   read one at a time by id. 'm365 request' does not follow
+#   @odata.nextLink, so every list is paged here. Changes nothing.
+# =============================================================================
+
+GRAPH_ROLES = "https://graph.microsoft.com/v1.0/roleManagement/directory/"
+ROLES_GLOBAL_ADMIN = "Global Administrator"
+ROLES_MANY = 10         # an account with this many roles or more is pointed out
+ROLES_MAX_PAGES = 200   # a guard: never page forever if Graph keeps answering
+
+def _graph_pages(run, url, cancelled):
+    # Every item of a Graph list, following @odata.nextLink.
+    # Returns (items, error text or "").
+    items, pages = [], 0
+    while url and not cancelled():
+        pages += 1
+        if pages > ROLES_MAX_PAGES:
+            return items, "stopped after %d pages" % ROLES_MAX_PAGES
+        rc, text = run(["request", "--url", url, "--output", "json"])
+        data = parse_json(text) if rc == 0 else None
+        if not isinstance(data, dict):
+            return items, " ".join((text or "").split())[:300] or "no answer"
+        items.extend(v for v in data.get("value") or [] if isinstance(v, dict))
+        url = data.get("@odata.nextLink") or ""
+    return items, ""
+
+def _principal_row(principal):
+    # (kind, display name, sign-in name / app id, enabled text) of the
+    # account, group or app that holds a role.
+    p = principal or {}
+    kind = (p.get("@odata.type") or "").replace("#microsoft.graph.", "") or "unknown"
+    kinds = {"user": "user", "servicePrincipal": "app", "group": "group"}
+    ident = p.get("userPrincipalName") or p.get("appId") or p.get("mail") or p.get("id") or ""
+    enabled = p.get("accountEnabled")
+    return (kinds.get(kind, kind), p.get("displayName") or ident or "(unknown)", ident,
+            "" if enabled is None else ("yes" if enabled else "NO"))
+
+def admin_roles(run, out, cancelled, values, records_base):
+    result = {"ok": False, "error": "", "folder": "", "assignments": 0}
+    with_apps = values.get("apps", YES) == YES
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    out("\n===== WHO HOLDS ADMIN ROLES =====\nReading role assignments...\n")
+    assignments, err = _graph_pages(run, GRAPH_ROLES + "roleAssignments?$expand=principal",
+                                    cancelled)
+    if err:
+        return stop("Could not read the role assignments: " + err +
+                    "\n(The signed-in account needs RoleManagement.Read.Directory or "
+                    "Directory.Read.All.)")
+    if cancelled():
+        return stop("[Stopped.]")
+    out("Reading role names...\n")
+    defs, err = _graph_pages(run, GRAPH_ROLES + "roleDefinitions?$select=id,displayName",
+                             cancelled)
+    names = {d.get("id"): d.get("displayName") for d in defs if d.get("id")}
+    for rid in sorted({a.get("roleDefinitionId") for a in assignments} - set(names)):
+        if cancelled() or not rid:
+            continue
+        rc, text = run(["request", "--url", GRAPH_ROLES + "roleDefinitions/" + rid +
+                        "?$select=id,displayName", "--output", "json"])
+        one = parse_json(text) if rc == 0 else None
+        names[rid] = (one or {}).get("displayName") if isinstance(one, dict) else None
+        names[rid] = names[rid] or ("role " + rid)
+
+    rows = []
+    for a in assignments:
+        kind, name, ident, enabled = _principal_row(a.get("principal"))
+        if kind == "app" and not with_apps:
+            continue
+        scope = a.get("directoryScopeId") or "/"
+        rows.append({"role": names.get(a.get("roleDefinitionId")) or "(unknown role)",
+                     "kind": kind, "name": name, "id": ident, "enabled": enabled,
+                     "scope": "whole organization" if scope == "/" else scope,
+                     "key": ((a.get("principal") or {}).get("id") or ident)})
+    rows.sort(key=lambda r: (r["role"] != ROLES_GLOBAL_ADMIN, r["role"].lower(),
+                             r["name"].lower()))
+    result["assignments"] = len(rows)
+
+    # ---- summary: the things worth a second look --------------------------------
+    holders = {}
+    for r in rows:
+        holders.setdefault(r["key"], []).append(r)
+    users = [k for k, rs in holders.items() if rs[0]["kind"] == "user"]
+    gas = [r for r in rows if r["role"] == ROLES_GLOBAL_ADMIN]
+    out("\n%d role assignment(s): %d account(s)%s.\n"
+        % (len(rows), len(users),
+           "" if not with_apps else ", %d app(s)" % sum(
+               1 for rs in holders.values() if rs[0]["kind"] == "app")))
+    # People and apps are counted apart: Microsoft's advice (fewer than five,
+    # at least two) is about people. A live tenant had 4 people + 1 app.
+    ga_people = sum(1 for r in gas if r["kind"] == "user")
+    ga_other = len(gas) - ga_people
+    out("Global Administrators: %d %s%s" % (ga_people, "person" if ga_people == 1 else "people",
+                                            (" + %d app(s) / group(s)" % ga_other) if ga_other else ""))
+    if ga_people > 4:
+        out("  - Microsoft recommends fewer than five.")
+    elif ga_people < 2:
+        out("  - Microsoft recommends at least two (so one is left if the other is locked out).")
+    out("\n")
+    many = sorted(((len(rs), rs[0]) for rs in holders.values() if len(rs) >= ROLES_MANY),
+                  key=lambda pair: -pair[0])
+    for n, r in many:
+        out("NOTE: %s (%s) holds %d roles - most people need one or two; a Global "
+            "Administrator already has every permission.\n" % (r["name"], r["id"], n))
+    off = sorted({(r["name"], r["id"]) for r in rows if r["enabled"] == "NO"})
+    for name, ident in off:
+        out("NOTE: %s (%s) is blocked from signing in but still holds a role - remove the "
+            "role if the account is no longer used.\n" % (name, ident))
+
+    # ---- the list, by role ---------------------------------------------------------
+    current = None
+    for r in rows:
+        if r["role"] != current:
+            current = r["role"]
+            out("\n%s\n" % current)
+        extra = [x for x in (r["kind"] if r["kind"] != "user" else "",
+                             "sign-in blocked" if r["enabled"] == "NO" else "",
+                             "" if r["scope"] == "whole organization" else "scope " + r["scope"])
+                 if x]
+        out("  %s  <%s>%s\n" % (r["name"], r["id"], ("  [" + ", ".join(extra) + "]") if extra else ""))
+
+    # ---- the record ------------------------------------------------------------------
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["role", "type", "name", "sign-in name or app id", "sign-in enabled", "scope"])
+    for r in rows:
+        writer.writerow([r["role"], r["kind"], r["name"], r["id"], r["enabled"], r["scope"]])
+    folder = _record_dir(records_base, "AdminRoles", "tenant")
+    result["folder"] = folder
+    _save(folder, "admin-roles.csv", buf.getvalue(), out)
+    result["ok"] = not cancelled()
+    out("\n===== DONE: %d assignment(s). Saved: %s =====\n"
+        % (len(rows), os.path.join(folder, "admin-roles.csv")))
     return result
