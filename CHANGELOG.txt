@@ -1,6 +1,66 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+10-30-2026  v0.14 MORE SHAREPOINT: GROUPS, LISTS, FILES, SHARING.
+                  - New guided, read-only task in SharePoint: Files shared
+                    by link in a folder. Checks every file in one folder
+                    (and its subfolders) for sharing links - by default
+                    only 'anyone with the link' links - and points out the
+                    ones that let anyone edit or never expire. Saves
+                    shared-links.csv in Records\SharedLinks_... without the
+                    link addresses. Desktop and browser.
+                  - Nine new read-only tasks. In SharePoint: SharePoint
+                    groups on a site, Members of a SharePoint group, Lists
+                    and libraries on a site, Files in a folder, Every
+                    file in a folder (subfolders included), Sharing links
+                    on a file (all, or only anyone-with-the-link, specific
+                    people or whole-organization links), Who can open a
+                    file (sharing details) and Hub sites. In Teams / M365
+                    Groups: Teams apps a person has installed.
+                  - New guided, read-only task in Security: Conditional
+                    Access review. Every policy in plain words (requires /
+                    applies to / excludes, by name / apps / only when),
+                    policies that are ON first, and notes: no policy that
+                    is ON requires MFA for everyone or for Global
+                    Administrators on all apps, nothing blocks legacy
+                    authentication, and each account or group excluded
+                    from MFA / block policies that are ON. Saves
+                    conditional-access.csv. Needs Policy.Read.All.
+                  - Who holds admin roles now also reads whether each person
+                    with a role registered an MFA method ('entra user
+                    registrationdetails list', 20 people per call) and
+                    points out those with none - Global Administrators
+                    first. The CSV gets 'MFA registered' and 'MFA methods'
+                    columns. Needs AuditLog.Read.All (and Entra ID P1/P2);
+                    if it cannot be read, a NOTE says so and the role list
+                    still finishes.
+                  - Who holds admin roles also reads each role holder's last
+                    sign-in (Graph signInActivity) and points out people
+                    who have not signed in for the days you choose (new box,
+                    90 by default) or never. The CSV gets a 'last sign-in'
+                    column (MM-DD-YYYY).
+                  - Six more read-only tasks in Service health and security:
+                    App-only permissions granted to an app (application
+                    permissions - the most powerful kind), App
+                    registrations made in the organization, Permissions an
+                    app registration asks for, Group settings for the
+                    organization, Are names hidden in usage reports?, and
+                    Pronouns setting.
+                  - 'Who can open a file' shows JSON: the CLI gives those
+                    details only in that form (its text and CSV output
+                    are empty), so it has no Save to CSV.
+                  - A library's 'Forms' folder holds SharePoint's own
+                    .aspx pages, so they appear in file lists.
+                  - Each command was checked with the CLI's --help (v11.11)
+                    and run live, read-only, on 10-29-2026.
+                  - Tests: tests\test_v014_sharepoint_more.py,
+                    tests\test_v014_apps_settings.py,
+                    tests\test_v014_admin_roles_mfa.py,
+                    tests\test_v014_admin_roles_signin.py,
+                    tests\test_v014_conditional_access.py,
+                    tests\test_v014_web_conditional_access.py,
+                    tests\test_v014_shared_links.py,
+                    tests\test_v014_web_shared_links.py.
 10-29-2026  v0.13 WHO HOLDS ADMIN ROLES.
                   - New guided, read-only task in Roles and admin units: Who
                     holds admin roles. Lists every person and app with a

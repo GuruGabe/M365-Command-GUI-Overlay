@@ -2,8 +2,8 @@
 # Script:   M365GUI.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
-# Modified: 10-28-2026
-# Version:  0.13
+# Modified: 10-29-2026
+# Version:  0.14
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.13"
+APP_VERSION = "0.14"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -293,7 +293,8 @@ from m365_catalog import (T, F, TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP,
 from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
                             staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
-                            remove_all_guests, admin_roles)
+                            remove_all_guests, admin_roles, shared_links,
+                            conditional_access)
 
 def random_password(length=16):
     # A new password for a compromised account: letters, digits and symbols
@@ -563,7 +564,8 @@ class M365Gui(tk.Tk):
         # The workflows that keep a record folder in RECORDS_DIR. They ask
         # their one question through _ask_yesno; the new password (compromised)
         # goes to _show_secret on the window's thread - never to the output.
-        # admin_roles only reads, so it asks nothing.
+        # admin_roles, shared_links and conditional_access (v0.14) only read, so
+        # they ask nothing.
         self.workflow_cancel = False
         self.run_button.config(state="disabled")
         values = self._collect()
@@ -582,6 +584,12 @@ class M365Gui(tk.Tk):
                 elif name == "admin_roles":
                     admin_roles(self._capture, self.output_queue.put,
                                 lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "shared_links":
+                    shared_links(self._capture, self.output_queue.put,
+                                 lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "conditional_access":
+                    conditional_access(self._capture, self.output_queue.put,
+                                       lambda: self.workflow_cancel, values, RECORDS_DIR)
                 else:
                     compromised_response(self._capture, self.output_queue.put, self._ask_yesno,
                                          lambda: self.workflow_cancel, values, RECORDS_DIR,
@@ -1139,7 +1147,8 @@ class M365Gui(tk.Tk):
         if self.current_task and self.current_task.get("workflow") == "onedrive_transfer":
             self._run_onedrive_transfer(); return
         if self.current_task and self.current_task.get("workflow") in ("staff_handoff", "compromised",
-                                                                        "admin_roles"):
+                                                                        "admin_roles", "shared_links",
+                                                                        "conditional_access"):
             self._run_record_workflow(self.current_task["workflow"]); return
 
         got = self._preview_argv()

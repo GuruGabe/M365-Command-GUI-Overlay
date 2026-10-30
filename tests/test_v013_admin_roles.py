@@ -41,6 +41,9 @@ def make_run(fail_assignments=False):
     rows = assignments()
     def run(argv):
         CALLS.append(argv)
+        # v0.14: the MFA registration read (tested in test_v014_admin_roles_mfa.py).
+        if argv[:4] == ["entra", "user", "registrationdetails", "list"]:
+            return 0, "[]"
         assert argv[0] == "request" and argv[-2:] == ["--output", "json"], argv
         url = argv[2]
         if url.startswith(G + "roleAssignments"):
@@ -80,7 +83,8 @@ try:
     check(text.index("Global Administrator\n") < text.index("Helpdesk Administrator\n"),
           "Global Administrator is listed first")
     check("Sync app" in text and "[app]" in text, "apps are listed when chosen")
-    check(not any(c[0] != "request" for c in CALLS), "only reads (m365 request GETs)")
+    check(not any(c[0] != "request" and c[:4] != ["entra", "user", "registrationdetails", "list"]
+                  for c in CALLS), "only reads (m365 request GETs + registrationdetails list)")
     path = os.path.join(res["folder"], "admin-roles.csv")
     with open(path, encoding="utf-8") as fh:
         data = list(csv.reader(fh))

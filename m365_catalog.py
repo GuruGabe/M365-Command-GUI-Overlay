@@ -30,6 +30,10 @@ def F(label, key, required=True, choices=None, default=""):
 TRANSFER_ACCESS_REMOVE = "Remove my temporary access when done"
 TRANSFER_ACCESS_KEEP = "Keep my access to both OneDrives"
 
+# The 'Which links' choices of Files shared by link (see shared_links, v0.14).
+SHARE_ANYONE = "Anyone-with-the-link links only"
+SHARE_ALL = "Every sharing link"
+
 TASKS = {
  "Users (Entra ID)": [
   T("List users", "Lists all users in the directory.",
@@ -321,6 +325,11 @@ TASKS = {
     "teams app list [--distributionMethod {dist}] --output text",
     [F("Only these apps (blank = all)", "dist", False,
        choices=["organization", "sideloaded", "store", ""], default="organization")]),
+  # v0.14 (10-29-2026): read-only, run live.
+  T("Teams apps a person has installed",
+    "The apps in one person's Teams (their personal apps, including the built-in ones).",
+    "teams user app list --userName {email} --output text",
+    [F("User (UPN)", "email")]),
  ],
  "Service health and security": [
   # v0.7 (10-23-2026): options checked against the CLI's docs.
@@ -344,6 +353,38 @@ TASKS = {
     "The permissions people consented to for one app. Get its object id from 'Apps in the "
     "organization'.", "entra oauth2grant list --spObjectId {id} --output text",
     [F("App's object id (service principal)", "id")]),
+  # v0.14 (10-29-2026): read-only; options from the CLI's --help (v11.11), run live.
+  T("App-only permissions granted to an app",
+    "What one app may do on its own, without a signed-in person (application permissions "
+    "such as reading every mailbox) - the most powerful kind. Use the app's display name "
+    "from 'Apps in the organization'. An empty result means it has none.",
+    "entra approleassignment list --appDisplayName {app} --output text",
+    [F("App display name", "app")]),
+  T("App registrations made in the organization",
+    "The apps registered in this organization's own Microsoft Entra ID (scripts, "
+    "integrations, tools such as this one), with when each was made and who can sign in "
+    "to it.",
+    "entra app list --properties \"displayName,appId,createdDateTime,signInAudience\" --output text",
+    []),
+  T("Permissions an app registration asks for",
+    "The API permissions one app registration requests - delegated (acting as the "
+    "signed-in person), application (acting on its own) or both. An empty result means "
+    "it requests none.",
+    "entra app permission list --appName {app} --type {ptype} --output text",
+    [F("App registration display name", "app"),
+     F("Which permissions", "ptype", choices=["all", "application", "delegated"], default="all")]),
+  T("Group settings for the organization",
+    "The organization-wide settings for Microsoft 365 groups (for example who may create "
+    "groups, guest access, naming rules), if any were set. An empty result means the "
+    "defaults are used.",
+    "entra groupsetting list --output text", []),
+  T("Are names hidden in usage reports?",
+    "Whether usage reports show people's names or hide them (Microsoft 365 admin center > "
+    "Settings > Org settings > Reports).",
+    "tenant report settings get --output text", []),
+  T("Pronouns setting",
+    "Whether people in the organization can add pronouns to their profile.",
+    "tenant people pronouns get --output text", []),
   T("Search the audit log",
     "Audit records of one kind (sign-ins and directory changes, Exchange, SharePoint...). "
     "Dates like 2026-10-01. Needs audit logging switched on.",
@@ -483,10 +524,14 @@ TASKS = {
   T("Who holds admin roles",
     "Every person and app that holds a Microsoft Entra admin role, by role - Global "
     "Administrators first - and what is worth a second look: too many or too few Global "
-    "Administrators, an account with many roles, a blocked account that still holds one. "
+    "Administrators, an account with many roles, a blocked account that still holds one, "
+    "and (v0.14) anyone with a role who has NO MFA method registered or has not "
+    "signed in for the days you choose. "
     "Changes nothing; a CSV is saved in the Records folder. Works without Entra ID P2 "
-    "(reads Microsoft Graph); needs RoleManagement.Read.Directory or Directory.Read.All.",
-    "", [F("Include apps (service principals)", "apps", choices=["Yes", "No"], default="Yes")],
+    "(reads Microsoft Graph); needs RoleManagement.Read.Directory or Directory.Read.All, "
+    "and AuditLog.Read.All (with Entra ID P1 or P2) for the MFA and sign-in checks.",
+    "", [F("Include apps (service principals)", "apps", choices=["Yes", "No"], default="Yes"),
+         F("Point out people who have not signed in for (days)", "days", False, default="90")],
     workflow="admin_roles"),
   # v0.7 (10-23-2026): options checked against the CLI's docs.
   T("List admin roles", "Every Microsoft Entra admin role (Global Administrator, User "
@@ -578,8 +623,81 @@ TASKS = {
     [F("Only this site (optional)", "url", False)]),
   T("SharePoint organization settings", "The SharePoint / OneDrive settings for the whole organization.",
     "spo tenant settings list --output text", []),
+  # v0.14 (10-29-2026): read-only; options checked with the CLI's --help
+  # (v11.11) and every command run live. A library's 'Forms' folder holds
+  # SharePoint's own .aspx pages, so they show up in file lists.
+  T("SharePoint groups on a site",
+    "The SharePoint groups of one site (usually its Owners, Members and Visitors groups). "
+    "Use 'Members of a SharePoint group' to see who is in one.",
+    "spo group list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Members of a SharePoint group",
+    "Who is in one SharePoint group on a site. The group name is shown by 'SharePoint groups "
+    "on a site'.",
+    "spo group member list --webUrl {url} --groupName {group} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("SharePoint group name e.g. Team Members", "group")]),
+  T("Lists and libraries on a site",
+    "The lists and document libraries people can see on one site (SharePoint's hidden "
+    "system lists are left out).",
+    "spo list list --webUrl {url} --filter \"Hidden eq false\" --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Files in a folder",
+    "The files directly in one folder of a site (not in its subfolders). The folder is "
+    "relative to the site, e.g. 'Shared Documents' or 'Shared Documents/Reports'. For a "
+    "OneDrive, use its address as the site and 'Documents' as the folder.",
+    "spo file list --webUrl {url} --folderUrl {folder} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Folder e.g. Shared Documents", "folder", default="Shared Documents")]),
+  T("Every file in a folder, subfolders included",
+    "Every file in a folder and all of its subfolders. A big library or OneDrive can take "
+    "many minutes.",
+    "spo file list --webUrl {url} --folderUrl {folder} --recursive --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Folder e.g. Shared Documents", "folder", default="Shared Documents")]),
+  T("Sharing links on a file",
+    "The sharing links made for one file. 'anonymous' = anyone with the link, 'users' = "
+    "specific people, 'organization' = everyone in the organization; blank = all. An "
+    "empty result means the file has no links of that kind.",
+    "spo file sharinglink list --webUrl {url} --fileUrl {file} [--scope {scope}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("File e.g. /sites/Team/Shared Documents/report.docx", "file"),
+     F("Only this kind of link (blank = all)", "scope", False,
+       choices=["", "anonymous", "users", "organization"])]),
+  T("Who can open a file (sharing details)",
+    "Everyone who can open one file and how: sharing links (with who used them), people "
+    "and groups given access, and the site admins. Shown as JSON - the CLI gives these "
+    "details only in that form.",
+    "spo file sharinginfo get --webUrl {url} --fileUrl {file} --output json",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("File e.g. /sites/Team/Shared Documents/report.docx", "file")]),
+  T("Hub sites",
+    "The organization's hub sites (sites that join other sites together). An empty "
+    "result means there are none.",
+    "spo hubsite list --output text", []),
+  # ---- v0.14: guided, read-only (m365_workflows.shared_links) ----------------
+  T("Files shared by link in a folder",
+    "Checks every file in one folder of a site (and its subfolders) for sharing links - "
+    "by default only 'anyone with the link' links, which open the file without signing "
+    "in - and points out the ones that allow editing or never expire. Changes nothing; a "
+    "CSV is saved in the Records folder (without the link addresses). One check per file, "
+    "so a big library takes a while.",
+    "", [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+         F("Folder e.g. Shared Documents", "folder", default="Shared Documents"),
+         F("Include subfolders", "subfolders", choices=["Yes", "No"], default="Yes"),
+         F("Which links", "kind", choices=[SHARE_ANYONE, SHARE_ALL], default=SHARE_ANYONE)],
+    workflow="shared_links"),
  ],
  "Security": [
+  # ---- v0.14: guided, read-only (m365_workflows.conditional_access) ----------
+  T("Conditional Access review",
+    "Every Conditional Access policy in plain words - what it requires (MFA, a compliant "
+    "device, block...), who it applies to and who is excluded, by name - and what is worth "
+    "a second look: no policy that is ON requires MFA for everyone or for Global "
+    "Administrators, nothing blocks legacy authentication, and who is excluded from "
+    "policies that are ON. Changes nothing; a CSV is saved in the Records folder. Needs "
+    "Policy.Read.All (Conditional Access needs Microsoft Entra ID P1 or P2).",
+    "", [], workflow="conditional_access"),
   # ---- v0.8: guided workflow (m365_workflows.compromised_response) ----------
   T("Compromised account response",
     "For an account someone else got into: blocks sign-in, signs it out everywhere and sets "
@@ -717,9 +835,18 @@ WORKFLOW_PLANS = {
                    "password (shown once) -> save evidence (sign-ins, MFA methods, groups, "
                    "licenses) and NEXT-STEPS.txt in the Records folder. Click Run to start.",
     "admin_roles": "Workflow (read-only): read every admin role assignment from Microsoft "
-                   "Graph -> look up the role names -> list them by role with notes -> save "
+                   "Graph -> look up the role names -> read each person's MFA registration "
+                   "-> list them by role with notes -> save "
                    "admin-roles.csv in the Records folder. Nothing is changed. Click Run to "
                    "start.",
+    "conditional_access": "Workflow (read-only): read every Conditional Access policy from "
+                          "Microsoft Graph -> look up the role, user and group names -> "
+                          "describe each policy with notes -> save conditional-access.csv in "
+                          "the Records folder. Nothing is changed. Click Run to start.",
+    "shared_links": "Workflow (read-only): list the files in the folder (and subfolders) -> "
+                    "read each file's sharing links -> list them with notes -> save "
+                    "shared-links.csv in the Records folder (no link addresses). Nothing is "
+                    "changed. Click Run to start.",
 }
 
 # =============================================================================

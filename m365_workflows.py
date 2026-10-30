@@ -2,7 +2,7 @@
 # Script:   m365_workflows.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  10-23-2026 (moved out of M365GUI.py, v0.6)
-# Modified: 10-28-2026 (v0.13: Who holds admin roles - read-only)
+# Modified: 10-29-2026 (v0.14: Files shared by link in a folder - read-only)
 #
 # Purpose:
 #   M365GUI's guided workflows - tasks that run several m365 commands in a
@@ -17,7 +17,8 @@ import json
 import os
 import urllib.parse
 
-from m365_catalog import TRANSFER_ACCESS_KEEP, TRANSFER_ACCESS_REMOVE, clean_identifier
+from m365_catalog import (SHARE_ANYONE, TRANSFER_ACCESS_KEEP, TRANSFER_ACCESS_REMOVE,
+                          clean_identifier)
 
 # =============================================================================
 # SECTION: OneDrive transfer - copy one user's OneDrive files to another user
@@ -598,8 +599,73 @@ def _principal_row(principal):
     return (kinds.get(kind, kind), p.get("displayName") or ident or "(unknown)", ident,
             "" if enabled is None else ("yes" if enabled else "NO"))
 
+MFA_BATCH = 20          # 'registrationdetails list --userIds' takes at most 20 ids
+
+def _mfa_status(run, user_ids, cancelled):
+    # v0.14: {user object id: (registered True/False, "method, method")} for the
+    # role holders, read 20 at a time with 'entra user registrationdetails list'
+    # (Graph's userRegistrationDetails - needs AuditLog.Read.All and, per
+    # Microsoft, Entra ID P1 or P2; checked live 10-29-2026). Returns
+    # (dict, error text or "").
+    found = {}
+    for i in range(0, len(user_ids), MFA_BATCH):
+        if cancelled():
+            break
+        rc, text = run(["entra", "user", "registrationdetails", "list", "--userIds",
+                        ",".join(user_ids[i:i + MFA_BATCH]), "--properties",
+                        "id,isMfaRegistered,methodsRegistered", "--output", "json"])
+        data = parse_json(text) if rc == 0 else None
+        if not isinstance(data, list):
+            return found, " ".join((text or "").split())[:300] or "no answer"
+        for d in data:
+            if isinstance(d, dict) and d.get("id"):
+                found[d["id"]] = (bool(d.get("isMfaRegistered")),
+                                  ", ".join(d.get("methodsRegistered") or []))
+    return found, ""
+
+ROLES_IDLE_DAYS = 90     # default: point out people idle this long
+ROLES_GRAPH_USERS = "https://graph.microsoft.com/v1.0/users/"
+
+def _signin_date(activity):
+    # The newest sign-in Microsoft recorded (successful first, else the
+    # newest interactive / non-interactive one) as a date, or None.
+    a = activity or {}
+    when = a.get("lastSuccessfulSignInDateTime") or max(
+        [x for x in (a.get("lastSignInDateTime"), a.get("lastNonInteractiveSignInDateTime")) if x] or [""])
+    try:
+        return datetime.datetime.strptime(when[:10], "%Y-%m-%d").date() if when else None
+    except ValueError:
+        return None
+
+def _last_signins(run, user_ids, cancelled):
+    # v0.14: {user object id: date or None} from Graph users/{id}?$select=
+    # signInActivity (needs AuditLog.Read.All and Entra ID P1 or P2; checked
+    # live 10-29-2026). If the FIRST read fails it is almost always a missing
+    # permission, so the reads stop; a later failure skips only that account
+    # (live: one account answered an empty body while eight others read
+    # fine). Returns (dict, error text or "").
+    found, skipped = {}, 0
+    for uid in user_ids:
+        if cancelled():
+            break
+        rc, text = run(["request", "--url", ROLES_GRAPH_USERS + uid + "?$select=signInActivity",
+                        "--output", "json"])
+        one = parse_json(text) if rc == 0 else None
+        if not isinstance(one, dict) or "error" in one:
+            if not found and not skipped:
+                return found, " ".join((text or "").split())[:300] or "no answer"
+            skipped += 1
+            continue
+        found[uid] = _signin_date(one.get("signInActivity"))
+    return found, ("%d account(s) gave no answer - their last sign-in is left blank" % skipped
+                   if skipped else "")
+
 def admin_roles(run, out, cancelled, values, records_base):
     result = {"ok": False, "error": "", "folder": "", "assignments": 0}
+    try:
+        idle_days = max(1, min(3650, int(str(values.get("days") or ROLES_IDLE_DAYS).strip())))
+    except ValueError:
+        idle_days = ROLES_IDLE_DAYS
     with_apps = values.get("apps", YES) == YES
 
     def stop(message):
@@ -643,6 +709,31 @@ def admin_roles(run, out, cancelled, values, records_base):
                              r["name"].lower()))
     result["assignments"] = len(rows)
 
+    # v0.14: has each person with a role registered an MFA method?
+    people = sorted({r["key"] for r in rows if r["kind"] == "user" and r["key"]})
+    mfa, mfa_err = ({}, "")
+    if people and not cancelled():
+        out("Reading MFA registration for %d account(s)...\n" % len(people))
+        mfa, mfa_err = _mfa_status(run, people, cancelled)
+    for r in rows:
+        got = mfa.get(r["key"]) if r["kind"] == "user" else None
+        r["mfa"] = "" if got is None else ("yes" if got[0] else "NO")
+        r["methods"] = "" if got is None else got[1]
+
+    # v0.14: when did each person with a role last sign in?
+    seen, seen_err = ({}, "")
+    if people and not cancelled():
+        out("Reading the last sign-in of %d account(s)...\n" % len(people))
+        seen, seen_err = _last_signins(run, people, cancelled)
+    today = datetime.date.today()
+    for r in rows:
+        if r["kind"] != "user" or r["key"] not in seen:
+            r["last"], r["idle"] = "", None
+        elif seen[r["key"]] is None:
+            r["last"], r["idle"] = "never (or not recorded)", -1
+        else:
+            r["last"], r["idle"] = seen[r["key"]].strftime("%m-%d-%Y"), (today - seen[r["key"]]).days
+
     # ---- summary: the things worth a second look --------------------------------
     holders = {}
     for r in rows:
@@ -673,6 +764,33 @@ def admin_roles(run, out, cancelled, values, records_base):
     for name, ident in off:
         out("NOTE: %s (%s) is blocked from signing in but still holds a role - remove the "
             "role if the account is no longer used.\n" % (name, ident))
+    # v0.14: no MFA method registered - Global Administrators first.
+    if mfa_err:
+        out("NOTE: MFA registration could not be read (needs the AuditLog.Read.All "
+            "permission and Microsoft Entra ID P1 or P2): %s\n" % mfa_err)
+    no_mfa_ga = sorted({(r["name"], r["id"]) for r in gas if r["mfa"] == "NO"})
+    no_mfa_other = sorted({(r["name"], r["id"]) for r in rows if r["mfa"] == "NO"} - set(no_mfa_ga))
+    for name, ident in no_mfa_ga:
+        out("NOTE: Global Administrator %s (%s) has NO MFA method registered - fix this "
+            "first.\n" % (name, ident))
+    for name, ident in no_mfa_other:
+        out("NOTE: %s (%s) holds an admin role and has NO MFA method registered.\n"
+            % (name, ident))
+    # v0.14: people with a role who have not signed in for idle_days (or never).
+    if seen_err and not seen:
+        out("NOTE: last sign-ins could not be read (needs the AuditLog.Read.All "
+            "permission and Microsoft Entra ID P1 or P2): %s\n" % seen_err)
+    elif seen_err:
+        out("NOTE: some last sign-ins could not be read: %s.\n" % seen_err)
+    idle = {}
+    for r in rows:
+        if r["idle"] is not None and (r["idle"] < 0 or r["idle"] >= idle_days):
+            idle[(r["name"], r["id"])] = (r["idle"], r["last"])
+    for (name, ident), (days, last) in sorted(idle.items(), key=lambda kv: -(kv[1][0] if kv[1][0] >= 0 else 10 ** 6)):
+        out("NOTE: %s (%s) holds an admin role and %s - remove the role or block the "
+            "account if it is no longer used.\n"
+            % (name, ident, "has never signed in (or it was not recorded)" if days < 0 else
+               "has not signed in for %d days (last %s)" % (days, last)))
 
     # ---- the list, by role ---------------------------------------------------------
     current = None
@@ -682,6 +800,9 @@ def admin_roles(run, out, cancelled, values, records_base):
             out("\n%s\n" % current)
         extra = [x for x in (r["kind"] if r["kind"] != "user" else "",
                              "sign-in blocked" if r["enabled"] == "NO" else "",
+                             "no MFA" if r["mfa"] == "NO" else "",
+                             "never signed in" if r["idle"] == -1 else
+                             ("idle %d days" % r["idle"]) if r["idle"] is not None and r["idle"] >= idle_days else "",
                              "" if r["scope"] == "whole organization" else "scope " + r["scope"])
                  if x]
         out("  %s  <%s>%s\n" % (r["name"], r["id"], ("  [" + ", ".join(extra) + "]") if extra else ""))
@@ -690,13 +811,360 @@ def admin_roles(run, out, cancelled, values, records_base):
     import io
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(["role", "type", "name", "sign-in name or app id", "sign-in enabled", "scope"])
+    writer.writerow(["role", "type", "name", "sign-in name or app id", "sign-in enabled", "scope",
+                     "MFA registered", "MFA methods", "last sign-in"])
     for r in rows:
-        writer.writerow([r["role"], r["kind"], r["name"], r["id"], r["enabled"], r["scope"]])
+        writer.writerow([r["role"], r["kind"], r["name"], r["id"], r["enabled"], r["scope"],
+                         r["mfa"], r["methods"], r["last"]])
     folder = _record_dir(records_base, "AdminRoles", "tenant")
     result["folder"] = folder
     _save(folder, "admin-roles.csv", buf.getvalue(), out)
     result["ok"] = not cancelled()
     out("\n===== DONE: %d assignment(s). Saved: %s =====\n"
         % (len(rows), os.path.join(folder, "admin-roles.csv")))
+    return result
+
+# =============================================================================
+# SECTION: Conditional Access review (v0.14, 10-29-2026) - read-only.
+#   Reads every Conditional Access policy from Microsoft Graph
+#   (identity/conditionalAccess/policies, through 'm365 request'), the admin
+#   role names (directoryRoleTemplates) and the names of the users and
+#   groups a policy includes or excludes (one GET each), then describes each
+#   policy in plain words and points out gaps: no policy that is ON requires
+#   MFA for everyone / for Global Administrators, nothing blocks legacy
+#   authentication, and who is excluded from policies that are ON. Needs
+#   Policy.Read.All. Changes nothing. Checked live 10-29-2026.
+# =============================================================================
+
+GRAPH = "https://graph.microsoft.com/v1.0/"
+GA_ROLE_TEMPLATE = "62e90394-69f5-4237-9190-012177145e10"   # Global Administrator
+CA_STATES = {"enabled": "ON", "disabled": "off",
+             "enabledForReportingButNotEnforced": "report-only (not enforced)"}
+CA_CONTROLS = {"mfa": "MFA", "block": "BLOCK access", "compliantDevice": "a compliant device",
+               "domainJoinedDevice": "a hybrid-joined device", "approvedApplication": "an approved app",
+               "compliantApplication": "an app protection policy", "passwordChange": "a password change"}
+CA_CLIENTS = {"exchangeActiveSync": "Exchange ActiveSync", "other": "other old clients",
+              "browser": "browser", "mobileAppsAndDesktopClients": "mobile and desktop apps"}
+CA_SPECIAL_USERS = {"All": "everyone", "None": "nobody", "GuestsOrExternalUsers": "guests"}
+LEGACY_CLIENTS = {"exchangeActiveSync", "other"}
+
+def _ca_requires(policy):
+    # True when the policy asks for MFA (the MFA control or an authentication strength).
+    grant = policy.get("grantControls") or {}
+    return "mfa" in (grant.get("builtInControls") or []) or bool(grant.get("authenticationStrength"))
+
+def _ca_blocks(policy):
+    return "block" in ((policy.get("grantControls") or {}).get("builtInControls") or [])
+
+def _ca_users(policy):
+    return (policy.get("conditions") or {}).get("users") or {}
+
+def _ca_grant_text(policy):
+    grant = policy.get("grantControls") or {}
+    parts = [CA_CONTROLS.get(c, c) for c in grant.get("builtInControls") or []]
+    strength = (grant.get("authenticationStrength") or {}).get("displayName")
+    if strength:
+        parts.append("authentication strength '%s'" % strength)
+    if grant.get("termsOfUse"):
+        parts.append("terms of use")
+    if not parts:
+        return "nothing (session settings only)" if policy.get("sessionControls") else "nothing"
+    if len(parts) > 1:
+        return ("all of: " if grant.get("operator") == "AND" else "any of: ") + ", ".join(parts)
+    return parts[0]
+
+def _ca_conditions_text(policy):
+    cond = policy.get("conditions") or {}
+    bits = []
+    clients = cond.get("clientAppTypes") or ["all"]
+    # All four client types listed one by one is the same as 'all' (seen live).
+    if "all" not in clients and not set(CA_CLIENTS) <= set(clients):
+        bits.append("only " + " / ".join(CA_CLIENTS.get(c, c) for c in clients))
+    if cond.get("locations"):
+        bits.append("only some locations")
+    if cond.get("platforms"):
+        bits.append("only some device platforms")
+    if cond.get("devices"):
+        bits.append("a device filter")
+    for key, label in (("signInRiskLevels", "sign-in risk"), ("userRiskLevels", "user risk")):
+        if cond.get(key):
+            bits.append("%s %s" % (label, "/".join(cond[key])))
+    return ", ".join(bits)
+
+def _ca_apps_text(policy):
+    apps = (policy.get("conditions") or {}).get("applications") or {}
+    inc = apps.get("includeApplications") or []
+    text = "all apps" if "All" in inc else ("Office 365" if inc == ["Office365"] else
+                                             "%d app(s)" % len(inc) if inc else "no apps")
+    if apps.get("excludeApplications"):
+        text += " except %d app(s)" % len(apps["excludeApplications"])
+    return text
+
+def conditional_access(run, out, cancelled, values, records_base):
+    result = {"ok": False, "error": "", "folder": "", "policies": 0}
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    out("\n===== CONDITIONAL ACCESS REVIEW =====\nReading the policies...\n")
+    policies, err = _graph_pages(run, GRAPH + "identity/conditionalAccess/policies", cancelled)
+    if err:
+        return stop("Could not read the Conditional Access policies: " + err +
+                    "\n(The signed-in account needs Policy.Read.All. Conditional Access needs "
+                    "Microsoft Entra ID P1 or P2.)")
+    if cancelled():
+        return stop("[Stopped.]")
+    result["policies"] = len(policies)
+    if not policies:
+        out("\nThere are no Conditional Access policies.\n")
+
+    # ---- names for the role, user and group ids the policies use -------------------
+    roles, rerr = _graph_pages(run, GRAPH + "directoryRoleTemplates?$select=id,displayName", cancelled)
+    names = {r.get("id"): r.get("displayName") for r in roles if r.get("id")}
+    wanted = {"users": set(), "groups": set()}
+    for p in policies:
+        u = _ca_users(p)
+        for side in ("include", "exclude"):
+            wanted["users"].update(x for x in u.get(side + "Users") or [] if x not in CA_SPECIAL_USERS)
+            wanted["groups"].update(u.get(side + "Groups") or [])
+    for kind, select in (("users", "displayName,userPrincipalName"), ("groups", "displayName")):
+        for oid in sorted(wanted[kind]):
+            if cancelled():
+                return stop("[Stopped.]")
+            rc, text = run(["request", "--url", GRAPH + kind + "/" + oid + "?$select=" + select,
+                            "--output", "json"])
+            one = parse_json(text) if rc == 0 else None
+            if isinstance(one, dict) and one.get("displayName"):
+                upn = one.get("userPrincipalName")
+                names[oid] = one["displayName"] + (" <%s>" % upn if upn else "")
+            else:
+                names[oid] = "(deleted or unknown %s %s)" % (kind[:-1], oid)
+
+    def who(u, side):
+        parts = [CA_SPECIAL_USERS.get(x) or names.get(x, x) for x in u.get(side + "Users") or []]
+        parts += ["group " + names.get(g, g) for g in u.get(side + "Groups") or []]
+        r = u.get(side + "Roles") or []
+        if r:
+            ga = " (incl. Global Administrator)" if GA_ROLE_TEMPLATE in r else ""
+            parts.append(("role " + (names.get(r[0]) or r[0])) if len(r) == 1 else
+                         "%d admin roles%s" % (len(r), ga))
+        if u.get(side + "GuestsOrExternalUsers"):
+            parts.append("guests / external users")
+        return parts
+
+    # ---- each policy in plain words ------------------------------------------------
+    rows = []
+    for p in sorted(policies, key=lambda x: (x.get("state") != "enabled", (x.get("displayName") or "").lower())):
+        u = _ca_users(p)
+        rows.append({"policy": p.get("displayName") or p.get("id") or "(no name)",
+                     "state": CA_STATES.get(p.get("state"), p.get("state") or ""),
+                     "requires": _ca_grant_text(p), "applies to": ", ".join(who(u, "include")) or "nobody",
+                     "excludes": ", ".join(who(u, "exclude")), "apps": _ca_apps_text(p),
+                     "conditions": _ca_conditions_text(p)})
+    for r in rows:
+        out("\n%s  [%s]\n  requires: %s\n  applies to: %s%s\n  apps: %s%s\n"
+            % (r["policy"], r["state"], r["requires"], r["applies to"],
+               ("\n  excludes: " + r["excludes"]) if r["excludes"] else "", r["apps"],
+               ("\n  only when: " + r["conditions"]) if r["conditions"] else ""))
+
+    # ---- what is worth a second look ------------------------------------------------
+    on = [p for p in policies if p.get("state") == "enabled"]
+    out("\n%d policy(ies): %d ON, %d report-only, %d off.\n"
+        % (len(policies), len(on),
+           sum(1 for p in policies if p.get("state") == "enabledForReportingButNotEnforced"),
+           sum(1 for p in policies if p.get("state") == "disabled")))
+    # Only policies that cover ALL apps count here - a one-app policy leaves the
+    # account open everywhere else.
+    mfa_on = [p for p in on if _ca_requires(p) and "All" in (((p.get("conditions") or {})
+              .get("applications") or {}).get("includeApplications") or [])]
+    if not any("All" in (_ca_users(p).get("includeUsers") or []) for p in mfa_on):
+        out("NOTE: no policy that is ON requires MFA for everyone on all apps.\n")
+    if not any("All" in (_ca_users(p).get("includeUsers") or []) or
+               GA_ROLE_TEMPLATE in (_ca_users(p).get("includeRoles") or []) for p in mfa_on):
+        out("NOTE: no policy that is ON requires MFA for Global Administrators on all apps - "
+            "add one first.\n")
+    legacy = [p for p in on if _ca_blocks(p) and
+              LEGACY_CLIENTS <= set((p.get("conditions") or {}).get("clientAppTypes") or [])
+              and "All" in (_ca_users(p).get("includeUsers") or [])]
+    if not legacy:
+        out("NOTE: no policy that is ON blocks legacy authentication (old mail apps that cannot "
+            "do MFA) for everyone.\n")
+    excluded = {}
+    for p in on:
+        if not (_ca_requires(p) or _ca_blocks(p)):
+            continue
+        u = _ca_users(p)
+        for oid in [x for x in u.get("excludeUsers") or [] if x not in CA_SPECIAL_USERS] + \
+                   (u.get("excludeGroups") or []):
+            excluded.setdefault(oid, []).append(p.get("displayName") or p.get("id"))
+    for oid, pols in sorted(excluded.items(), key=lambda kv: -len(kv[1])):
+        kind = "group " if oid in wanted["groups"] else ""
+        out("NOTE: %s%s is excluded from %d MFA / block policy(ies) that are ON (%s) - make sure "
+            "that is on purpose (an emergency 'break-glass' account is the usual reason).\n"
+            % (kind, names.get(oid, oid), len(pols), "; ".join(pols)))
+    if rerr:
+        out("NOTE: admin role names could not be read (%s) - roles are shown by id.\n" % rerr)
+
+    # ---- the record ------------------------------------------------------------------
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    columns = ["policy", "state", "requires", "applies to", "excludes", "apps", "conditions"]
+    writer.writerow(columns)
+    for r in rows:
+        writer.writerow([r[c] for c in columns])
+    folder = _record_dir(records_base, "ConditionalAccess", "tenant")
+    result["folder"] = folder
+    _save(folder, "conditional-access.csv", buf.getvalue(), out)
+    result["ok"] = not cancelled()
+    out("\n===== DONE: %d policy(ies). Saved: %s =====\n"
+        % (len(rows), os.path.join(folder, "conditional-access.csv")))
+    return result
+
+# =============================================================================
+# SECTION: Files shared by link in a folder (v0.14, 10-29-2026) - read-only.
+#   'spo file list' (with --recursive for subfolders) gives the files; then
+#   'spo file sharinglink list --fileId' gives each file's links (with
+#   --scope anonymous for 'anyone' links only). A library's Forms folder
+#   holds SharePoint's own .aspx pages - the sharing commands fail on them
+#   (found live 10-29-2026), so they are skipped. The link ADDRESSES are
+#   never shown or saved: whoever has an 'anyone' link can open the file.
+#   Changes nothing.
+# =============================================================================
+
+SHARE_MAX_FILES = 2000   # one command per file - a guard for huge libraries
+SHARE_PROGRESS = 25      # a progress line every this many files
+
+def _link_row(path, link):
+    # One CSV / screen row for one sharing link of one file.
+    info = link.get("link") or {}
+    people = []
+    for ident in link.get("grantedToIdentitiesV2") or link.get("grantedToIdentities") or []:
+        user = (ident or {}).get("user") or (ident or {}).get("siteUser") or {}
+        who = user.get("email") or user.get("displayName")
+        if who and who not in people:
+            people.append(who)
+    expires = (link.get("expirationDateTime") or "")[:10]
+    return {"file": path,
+            "scope": info.get("scope") or link.get("scope") or "unknown",
+            "type": info.get("type") or "",
+            "roles": ",".join(link.get("roles") or []),
+            "expires": expires,
+            "password": "yes" if link.get("hasPassword") else "no",
+            "blocks download": "yes" if info.get("preventsDownload") else "no",
+            "people": "; ".join(people)}
+
+def _can_edit(row):
+    return row["type"] == "edit" or "write" in row["roles"].split(",")
+
+def shared_links(run, out, cancelled, values, records_base):
+    result = {"ok": False, "error": "", "folder": "", "files": 0, "links": 0}
+    site = clean_identifier(values.get("url") or "").strip().rstrip("/")
+    folder = (values.get("folder") or "").strip().strip("/")
+    deep = values.get("subfolders", YES) == YES
+    anyone_only = values.get("kind", SHARE_ANYONE) == SHARE_ANYONE
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    if not site.lower().startswith("https://"):
+        return stop("The Site URL box needs a site address such as "
+                    "https://contoso.sharepoint.com/sites/Team.")
+    if not folder:
+        return stop("The Folder box needs a folder, e.g. Shared Documents.")
+
+    out("\n===== FILES SHARED BY LINK =====\nSite: %s\nFolder: %s%s\nLinks: %s\n"
+        % (site, folder, " (and its subfolders)" if deep else "",
+           "anyone with the link only" if anyone_only else "every kind"))
+    out("Listing the files...\n")
+    rc, text = run(["spo", "file", "list", "--webUrl", site, "--folderUrl", folder] +
+                   (["--recursive"] if deep else []) + ["--output", "json"])
+    files = parse_json(text) if rc == 0 else None
+    if not isinstance(files, list):
+        return stop("Could not list the files: " +
+                    (" ".join((text or "").split())[:300] or "no answer"))
+    files = [f for f in files if isinstance(f, dict) and f.get("UniqueId")
+             and "/forms/" not in (f.get("ServerRelativeUrl") or "").lower()]
+    if len(files) > SHARE_MAX_FILES:
+        out("NOTE: %d files - only the first %d are checked. Choose a smaller folder for the "
+            "rest.\n" % (len(files), SHARE_MAX_FILES))
+        files = files[:SHARE_MAX_FILES]
+    out("%d file(s) to check.\n" % len(files))
+
+    rows, failed, checked = [], [], 0
+    for f in files:
+        if cancelled():
+            break
+        path = f.get("ServerRelativeUrl") or f.get("Name") or f["UniqueId"]
+        rc, text = run(["spo", "file", "sharinglink", "list", "--webUrl", site,
+                        "--fileId", f["UniqueId"]] +
+                       (["--scope", "anonymous"] if anyone_only else []) + ["--output", "json"])
+        links = parse_json(text) if rc == 0 else None
+        checked += 1
+        if not isinstance(links, list):
+            failed.append((path, " ".join((text or "").split())[:200] or "no answer"))
+        else:
+            rows.extend(_link_row(path, link) for link in links if isinstance(link, dict))
+        if checked % SHARE_PROGRESS == 0 and checked < len(files):
+            out("  ... %d of %d checked\n" % (checked, len(files)))
+    result["files"], result["links"] = checked, len(rows)
+    if cancelled():
+        out("\n[Stopped after %d of %d file(s).]\n" % (checked, len(files)))
+
+    # ---- summary: the things worth a second look --------------------------------
+    by_scope = {}
+    for r in rows:
+        by_scope[r["scope"]] = by_scope.get(r["scope"], 0) + 1
+    shared_files = len({r["file"] for r in rows})
+    out("\n%d link(s) on %d of %d file(s)%s.\n"
+        % (len(rows), shared_files, checked,
+           (" (" + ", ".join("%s %d" % (k, v) for k, v in sorted(by_scope.items())) + ")")
+           if by_scope else ""))
+    anyone = [r for r in rows if r["scope"] == "anonymous"]
+    edit_anyone = [r for r in anyone if _can_edit(r)]
+    forever = [r for r in anyone if not r["expires"]]
+    if edit_anyone:
+        out("NOTE: %d 'anyone' link(s) let whoever has the link EDIT the file.\n" % len(edit_anyone))
+    if forever:
+        out("NOTE: %d 'anyone' link(s) never expire.\n" % len(forever))
+    if failed:
+        out("NOTE: %d file(s) could not be checked (listed at the end).\n" % len(failed))
+
+    # ---- the list, by file ---------------------------------------------------------
+    current = None
+    for r in rows:
+        if r["file"] != current:
+            current = r["file"]
+            out("\n%s\n" % current)
+        bits = [r["scope"], r["type"] or r["roles"] or "?",
+                ("expires " + r["expires"]) if r["expires"] else "no expiry"]
+        if r["password"] == "yes":
+            bits.append("password")
+        if r["people"]:
+            bits.append("for " + r["people"])
+        out("  " + ", ".join(bits) + "\n")
+    for path, why in failed:
+        out("\nCOULD NOT CHECK: %s - %s\n" % (path, why))
+
+    # ---- the record ------------------------------------------------------------------
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    columns = ["file", "scope", "type", "roles", "expires", "password", "blocks download", "people"]
+    writer.writerow(columns)
+    for r in rows:
+        writer.writerow([r[c] for c in columns])
+    for path, why in failed:
+        writer.writerow([path, "COULD NOT CHECK", "", "", "", "", "", why])
+    name = site.split("/")[-1] or "site"
+    folder_out = _record_dir(records_base, "SharedLinks", name)
+    result["folder"] = folder_out
+    _save(folder_out, "shared-links.csv", buf.getvalue(), out)
+    result["ok"] = not cancelled() and not failed
+    out("\n===== DONE: %d file(s) checked, %d link(s). Saved: %s =====\n"
+        % (checked, len(rows), os.path.join(folder_out, "shared-links.csv")))
     return result

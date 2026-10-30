@@ -397,6 +397,12 @@ def api_workflow(data):
         elif name == "admin_roles":          # v0.13: read-only, asks nothing
             os.makedirs(records, exist_ok=True)
             wf.admin_roles(capture, job.out, job.cancelled, values, records)
+        elif name == "shared_links":         # v0.14: read-only, asks nothing
+            os.makedirs(records, exist_ok=True)
+            wf.shared_links(capture, job.out, job.cancelled, values, records)
+        elif name == "conditional_access":   # v0.14: read-only, asks nothing
+            os.makedirs(records, exist_ok=True)
+            wf.conditional_access(capture, job.out, job.cancelled, values, records)
         else:
             job.out("Unknown workflow.\n")
     return {"job": start_job(target).id}

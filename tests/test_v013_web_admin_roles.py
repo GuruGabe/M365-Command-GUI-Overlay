@@ -24,7 +24,10 @@ argv = sys.argv[1:]
 open(os.environ["M365_CALLS"], "a").write(json.dumps(argv) + "\n")
 G = "https://graph.microsoft.com/v1.0/roleManagement/directory/"
 url = argv[2] if argv[:2] == ["request", "--url"] else ""
-if url.startswith(G + "roleAssignments"):
+if argv[:4] == ["entra", "user", "registrationdetails", "list"]:     # v0.14: MFA read
+    print(json.dumps([{"id": "u1", "isMfaRegistered": True, "methodsRegistered": ["microsoftAuthenticatorPush"]},
+                      {"id": "u2", "isMfaRegistered": False, "methodsRegistered": []}]))
+elif url.startswith(G + "roleAssignments"):
     print(json.dumps({"value": [
         {"roleDefinitionId": "ga", "directoryScopeId": "/", "principal": {
             "@odata.type": "#microsoft.graph.user", "id": "u1", "displayName": "Pat Admin",
@@ -82,7 +85,10 @@ check(not asked, "it asks no question (read-only)")
 check("Global Administrators: 2 people" in text and "Pat Admin  <pat@contoso.com>" in text,
       "the list and the summary reach the page")
 calls = [json.loads(l) for l in open(CALLS)]
-check(calls and all(c[0] == "request" for c in calls), "only 'm365 request' reads were run (%d)" % len(calls))
+check(calls and all(c[0] == "request" or c[:4] == ["entra", "user", "registrationdetails", "list"]
+                    for c in calls), "only reads were run (%d)" % len(calls))
+check("Global Administrator Lee Admin (lee@contoso.com) has NO MFA method registered" in text,
+      "v0.14: a Global Administrator without MFA reaches the page")
 records = os.path.join(tmp, "Records")
 found = [os.path.join(r, f) for r, _d, fs in os.walk(records) for f in fs if f == "admin-roles.csv"]
 check(len(found) == 1, "admin-roles.csv saved under DATA_DIR/Records")

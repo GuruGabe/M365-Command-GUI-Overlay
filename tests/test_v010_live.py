@@ -19,7 +19,13 @@ def check(cond, msg):
     if not cond:
         fails.append(msg)
 
-reports = [(cat, t) for cat, ts in c.TASKS.items() for t in ts if " report " in " " + t["template"] + " "]
+def is_usage_report(template):
+    # A usage report command ('<workload> report <name>'). v0.14: 'tenant report
+    # settings get' is a SETTING, not a report - it takes --output text (run live
+    # 10-29-2026).
+    return " report " in " " + template + " " and "report settings" not in template
+
+reports = [(cat, t) for cat, ts in c.TASKS.items() for t in ts if is_usage_report(t["template"])]
 # 9 in v0.10; 11 since 10-28-2026 (v0.12: mailbox quota counts, OneDrive
 # storage for the whole organization).
 check(len(reports) == 11, "the 11 usage reports are found (%d)" % len(reports))
@@ -27,7 +33,7 @@ for cat, t in reports:
     check("--output csv" in t["template"] and "--output text" not in t["template"],
           "%s: runs with --output csv (report commands refuse text)" % t["name"])
     check(c.saves_output(t), "%s: can still be saved to a CSV / JSON file" % t["name"])
-check(not any("--output text" in t["template"] and (" report " in " " + t["template"] + " ")
+check(not any("--output text" in t["template"] and is_usage_report(t["template"])
               for ts in c.TASKS.values() for t in ts), "no report command anywhere uses --output text")
 check(not any("activeusercounts" in t["template"] for ts in c.TASKS.values() for t in ts)
       and any("servicesusercounts" in t["template"] for _cat, t in reports),

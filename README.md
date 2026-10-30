@@ -126,6 +126,25 @@ Real jobs M365GUI makes easy. Each links to the matching CLI documentation.
   `admin-roles.csv`. Works without Entra ID P2 (the CLI's `entra pim`
   commands need it): it reads Microsoft Graph's role assignments with
   `m365 request`. Needs RoleManagement.Read.Directory or Directory.Read.All.
+  Since 0.14 it also points out anyone with a role who has **no MFA method
+  registered** (Global Administrators first) and anyone who **has not signed
+  in** for the days you choose (90 by default) or never, and adds MFA and
+  last sign-in columns to the CSV - those checks need AuditLog.Read.All and
+  Entra ID P1 or P2; without them the role list still runs.
+- **Conditional Access review** (Security, 0.14, read-only): every
+  Conditional Access policy in plain words - what it requires, who it
+  applies to and who is excluded, by name - with notes when no policy that
+  is ON requires MFA for everyone or for Global Administrators on all apps,
+  when nothing blocks legacy authentication, and for every account or
+  group excluded from MFA / block policies that are ON. Saves
+  `conditional-access.csv`. Needs Policy.Read.All (and Entra ID P1 or P2).
+- **Files shared by link in a folder** (SharePoint, 0.14, read-only): checks
+  every file in one folder of a site or OneDrive (and its subfolders) for
+  sharing links - by default only "anyone with the link" links - and points
+  out the ones that allow editing or never expire. Saves `shared-links.csv`
+  (file, kind of link, view / edit, expiry, password, who a specific-people
+  link is for). The link addresses are never shown or saved. One check per
+  file, so a big library takes a while (up to 2,000 files per run).
 - Records go to the **Records** folder in the settings folder.
 
 ### Security
@@ -244,13 +263,13 @@ walkthrough. **README.txt** is the full reference.
 | Users (Entra ID) | List (all / members / guests), get (with manager), create, reset password, rename, job title / department / office, manager, usage location, block/unblock, groups and licenses of a user, invite a guest, check a password, MFA registration report, delete, recycle bin (restore, delete for good, empty), remove all guests | [entra user](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-list/) |
 | Groups (Entra) | List, list by type (4 types), get info, create, rename / describe, list/add/remove members, make an owner, delete | [entra group](https://pnp.github.io/cli-microsoft365/cmd/entra/group/group-list/) |
 | Licenses | View all SKUs, list users with a license, assign, remove | [entra license](https://pnp.github.io/cli-microsoft365/cmd/entra/license/license-list/) |
-| Teams / M365 Groups | Microsoft 365 groups (with site address, without owners, info, members, roles, remove, deleted and restore, turn into a Team); Teams (list, a user's Teams, settings, create, archive, unarchive, delete, apps installed in a Team, the Teams app catalog); channels (list, add, delete, members) | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
-| SharePoint | List sites (all, team, communication, with OneDrives), site info, create team / communication site, delete, deleted and restore, site collection admins, lock / read-only, sharing setting, a site's recycle bin, external users, organization settings, add user to a site group | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
+| Teams / M365 Groups | Microsoft 365 groups (with site address, without owners, info, members, roles, remove, deleted and restore, turn into a Team); Teams (list, a user's Teams, settings, create, archive, unarchive, delete, apps installed in a Team, the Teams app catalog, a person's Teams apps); channels (list, add, delete, members) | [m365group](https://pnp.github.io/cli-microsoft365/cmd/entra/m365group/m365group-user-add/) |
+| SharePoint | Files shared by link in a folder (guided, read-only); list sites (all, team, communication, with OneDrives), site info, create team / communication site, delete, deleted and restore, site collection admins, lock / read-only, sharing setting, a site's recycle bin, external users, organization settings, add user to a site group; a site's SharePoint groups and their members, lists and libraries, files in a folder (with or without subfolders), sharing links on a file, who can open a file, hub sites | [spo](https://pnp.github.io/cli-microsoft365/cmd/spo/site/site-list/) |
 | OneDrive | List every OneDrive, find a user's OneDrive address, copy a user's OneDrive files to another user | [spo folder copy](https://pnp.github.io/cli-microsoft365/cmd/spo/folder/folder-copy/) |
-| Security | Compromised account response, sign out everywhere, sign-in activity, Microsoft Entra policies (guest invitations, security defaults, sign-in methods, Conditional Access...) | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
+| Security | Conditional Access review (guided, read-only), compromised account response, sign out everywhere, sign-in activity, Microsoft Entra policies (guest invitations, security defaults, sign-in methods, Conditional Access...) | [session revoke](https://pnp.github.io/cli-microsoft365/cmd/entra/user/user-session-revoke/) |
 | Diagnostics | Login status, CLI version, tenant id, organization details, saved connections (list, switch, rename, remove), sign in, sign out | [status](https://pnp.github.io/cli-microsoft365/cmd/status/) |
 | Roles and admin units | Who holds admin roles (guided, read-only), admin roles, give someone a role, administrative units and their members | [roleassignment](https://pnp.github.io/cli-microsoft365/cmd/entra/roleassignment/roleassignment-add/) |
-| Service health and security | Service health, current issues, message center, security alerts, organization info, enterprise apps and their permission grants, audit log search, retention and sensitivity labels | [serviceannouncement](https://pnp.github.io/cli-microsoft365/cmd/tenant/serviceannouncement/serviceannouncement-health-list/) |
+| Service health and security | Service health, current issues, message center, security alerts, organization info, enterprise apps and their permission grants, app-only permissions granted to an app, app registrations and the permissions they ask for, group settings, whether usage reports hide names, the pronouns setting, audit log search, retention and sensitivity labels | [serviceannouncement](https://pnp.github.io/cli-microsoft365/cmd/tenant/serviceannouncement/serviceannouncement-health-list/) |
 | Outlook | Send an email, mailbox settings, a user's calendars, calendar events and mail folders, automatic replies (on, for dates, off), meeting rooms, room lists | [outlook](https://pnp.github.io/cli-microsoft365/cmd/outlook/mail/mail-send/) |
 | Planner | A group's plans, a plan's tasks | [planner](https://pnp.github.io/cli-microsoft365/cmd/planner/plan/plan-list/) |
 | Reports (usage) | Active users, Teams, OneDrive (per account and organization total), mail, mailboxes near their size limit and SharePoint usage, 7 to 180 days | [tenant report](https://pnp.github.io/cli-microsoft365/cmd/tenant/report/report-activeusercounts/) |
@@ -412,7 +431,7 @@ xattr -dr com.apple.quarantine dist/M365GUI
 |------|---------|
 | `M365GUI.py` | The application window (standard library only) |
 | `m365_catalog.py` | The task catalog and command builder, plus search, Pick..., CSV-row and script helpers |
-| `m365_workflows.py` | Guided workflows (OneDrive copy, staff hand-off, compromised account, remove all guests, who holds admin roles) |
+| `m365_workflows.py` | Guided workflows (OneDrive copy, staff hand-off, compromised account, remove all guests, who holds admin roles, files shared by link, Conditional Access review) |
 | `m365_web.py` | The browser version |
 | `m365_update.py` | macOS / Linux in-app updater and What's new (from GAMGUI) |
 | `updatem365gui.ps1` | Windows updater (shipped inside the Windows builds) |

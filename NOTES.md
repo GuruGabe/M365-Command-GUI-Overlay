@@ -6,10 +6,11 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 139 tasks in 13 sections (counted 10-28-2026, v0.13), plus a Custom-command
-  mode and five guided workflows: staff hand-off, remove all guest users,
+- 156 tasks in 13 sections (counted 10-29-2026, v0.14), plus a Custom-command
+  mode and seven guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
-  user, and who holds admin roles (read-only).
+  user, who holds admin roles, files shared by link and Conditional Access
+  review (the last three read-only).
 - Search, Favorites and Recent, Pick... lists, Save results to CSV / JSON,
   Run for each CSV row, a Connection list (v0.11), Settings > Set up the
   CLI and Settings > Dark mode (v0.12).
@@ -25,11 +26,15 @@
 - More Exchange Online tasks. Done in v0.12 (checked with `--help full` on
   CLI v11.11): automatic replies, a user's calendars / events / mail folder.
   The CLI's `outlook` commands have no mail-forwarding setting.
-- Admin roles: done in v0.13 (Who holds admin roles). Still open: roles
-  that are only ELIGIBLE (PIM) need Entra ID P2 to read.
+- Admin roles: done in v0.13 (Who holds admin roles); v0.14 adds the MFA
+  registration check. Still open: roles that are only ELIGIBLE (PIM) need
+  Entra ID P2 to read.
 - The CLI (v11.11) has no Intune commands. Guest invitations exist (Users >
   Invite a guest).
-- More Teams and SharePoint coverage.
+- More Teams and SharePoint coverage. v0.14 added SharePoint groups and
+  members, lists and libraries, files, sharing links / sharing details and
+  hub sites. Still open (read-only candidates the gap finder lists): folder
+  sharing links, list items, page / navigation details, content types.
 - Live tests of the tasks that change things and of the guided workflows,
   on throwaway accounts.
 
@@ -52,7 +57,56 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 10-29-2026: v0.13 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-28-2026: v0.12 published by the 5 PM daily release (Release-M365GUI.ps1).
+
+- 10-29-2026 (v0.14): nine read-only tasks (SharePoint groups / members,
+  lists and libraries, files in a folder with and without subfolders,
+  sharing links, sharing details, hub sites; a person's Teams apps). Options
+  from '--help' / '--help full' (v11.11); each command run live, read-only.
+  Found live: 'spo group list --associatedGroupsOnly' answers ONE object
+  (AssociatedOwnerGroup / MemberGroup / VisitorGroup), not a list; a
+  recursive 'spo file list' includes the library's Forms/*.aspx pages, and
+  'spo file sharinglink list' / 'sharinginfo get' on such a page fail
+  ("Resource not found for the segment ..." / "Cannot read properties of
+  undefined (reading 'Id')") - on a real document both work, by
+  server-relative --fileUrl or by --fileId; 'sharinginfo get' with
+  --output text or csv prints NOTHING (JSON only); a recursive list of a big
+  OneDrive took over 5 minutes. Tests: tests\test_v014_sharepoint_more.py.
+  Also (v0.14): Files shared by link in a folder (guided, read-only;
+  m365_workflows.shared_links): 'spo file list' (--recursive) then one
+  'spo file sharinglink list --fileId <UniqueId>' per file (--scope
+  anonymous for anyone links), Forms pages skipped, link webUrl never
+  shown or saved, 2,000-file guard. Live read-only run OK (a team site and
+  a OneDrive folder) but they had NO sharing links, so the link parsing is
+  checked only against the CLI's documented JSON (--help response). Tests:
+  tests\test_v014_shared_links.py, tests\test_v014_web_shared_links.py.
+  Also (v0.14): six read-only Service health and security tasks ('entra
+  approleassignment list --appDisplayName', 'entra app list --properties',
+  'entra app permission list --appName --type', 'entra groupsetting list',
+  'tenant report settings get', 'tenant people pronouns get'), run live.
+  'entra app permission list' answers nothing for an app that requests no
+  permissions (most app registrations); --output text works for all six.
+  Tests: tests\test_v014_apps_settings.py.
+  Also (v0.14): Who holds admin roles reads MFA registration with 'entra
+  user registrationdetails list --userIds <20 ids> --properties
+  id,isMfaRegistered,methodsRegistered' (AuditLog.Read.All; P1+). Live:
+  one call for the tenant's role holders. An unreadable MFA status is
+  blank, never 'NO'. Tests: tests\test_v014_admin_roles_mfa.py (and the
+  two v0.13 admin-role tests now allow that read). It also reads each role
+  holder's last sign-in (Graph users/{id}?$select=signInActivity, one GET
+  each; the newest of lastSuccessful / lastSignIn / lastNonInteractive).
+  Live: one account answered an EMPTY body while eight read fine, so only
+  a failed FIRST read stops (permission); later ones are skipped and
+  counted. Tests: tests\test_v014_admin_roles_signin.py.
+  Also (v0.14): Conditional Access review (m365_workflows.conditional_access):
+  Graph identity/conditionalAccess/policies + directoryRoleTemplates
+  (includeRoles are role TEMPLATE ids) + users/{id} and groups/{id} for
+  names, all through 'm365 request'. Found live: a policy can list all four
+  clientAppTypes one by one (= all); grantControls always has
+  authenticationStrength (null when unused). The MFA gap notes count only
+  policies that are ON and cover ALL apps. Tests:
+  tests\test_v014_conditional_access.py, tests\test_v014_web_conditional_access.py.
 
 - 10-28-2026 (v0.13): Who holds admin roles (guided, read-only;
   m365_workflows.admin_roles). 'entra pim role assignment list' /

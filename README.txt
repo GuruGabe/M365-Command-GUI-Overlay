@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 139
-   admin tasks as fill-in forms across 13 sections (v0.13): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 156
+   admin tasks as fill-in forms across 13 sections (v0.14): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security and Diagnostics
    - plus a Custom-command mode for any m365 command.
@@ -119,6 +119,30 @@
    holds a role) and saves admin-roles.csv in a Records\AdminRoles_... folder.
    Works without Entra ID P2. Needs RoleManagement.Read.Directory or
    Directory.Read.All. The CSV names admins - delete it when done.
+   Since v0.14 it also reads each person's MFA registration and points out
+   anyone with a role who has NO MFA method registered (Global
+   Administrators first), and anyone with a role who has not signed in for
+   the days you choose (90 by default) or never. Those checks need
+   AuditLog.Read.All and Entra ID P1 or P2; if they cannot be read, a NOTE
+   says so and the rest still runs.
+
+   CONDITIONAL ACCESS REVIEW (Security, v0.14): read-only - asks nothing
+   and changes nothing. Describes every Conditional Access policy in plain
+   words (what it requires, who it applies to, who is excluded - by name)
+   and adds notes when no policy that is ON requires MFA for everyone or
+   for Global Administrators on all apps, when nothing blocks legacy
+   authentication, and for every account or group excluded from MFA /
+   block policies that are ON. Saves conditional-access.csv in a
+   Records\ConditionalAccess_... folder. Needs Policy.Read.All.
+
+   FILES SHARED BY LINK IN A FOLDER (SharePoint, v0.14): read-only - asks
+   nothing and changes nothing. Checks every file in one folder of a site
+   or OneDrive (and its subfolders, if chosen) for sharing links - by
+   default only 'anyone with the link' links - and points out links that
+   let anyone EDIT and links that never expire. Saves shared-links.csv in
+   a Records\SharedLinks_... folder. The link addresses are never shown
+   or saved. One check per file (up to 2,000 per run), so a big library
+   takes a while; Stop ends it after the current file.
 
    COPY A USER'S ONEDRIVE FILES TO ANOTHER USER (OneDrive section, v0.4):
      - Copies EVERYTHING in the From user's OneDrive into a new folder in the
