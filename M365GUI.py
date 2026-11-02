@@ -3,7 +3,7 @@
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
 # Modified: 10-29-2026
-# Version:  0.14
+# Version:  0.15
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.14"
+APP_VERSION = "0.15"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -294,7 +294,7 @@ from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
                             staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
                             remove_all_guests, admin_roles, shared_links,
-                            conditional_access)
+                            conditional_access, move_to_site, team_settings)
 
 def random_password(length=16):
     # A new password for a compromised account: letters, digits and symbols
@@ -581,12 +581,18 @@ class M365Gui(tk.Tk):
                 if name == "staff_handoff":
                     staff_handoff(self._capture, self.output_queue.put, self._ask_yesno,
                                   lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "move_to_site":      # v0.15: asks once before moving
+                    move_to_site(self._capture, self.output_queue.put, self._ask_yesno,
+                                 lambda: self.workflow_cancel, values, RECORDS_DIR)
                 elif name == "admin_roles":
                     admin_roles(self._capture, self.output_queue.put,
                                 lambda: self.workflow_cancel, values, RECORDS_DIR)
                 elif name == "shared_links":
                     shared_links(self._capture, self.output_queue.put,
                                  lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "team_settings":     # v0.15: read-only, asks nothing
+                    team_settings(self._capture, self.output_queue.put,
+                                  lambda: self.workflow_cancel, values, RECORDS_DIR)
                 elif name == "conditional_access":
                     conditional_access(self._capture, self.output_queue.put,
                                        lambda: self.workflow_cancel, values, RECORDS_DIR)
@@ -1148,7 +1154,9 @@ class M365Gui(tk.Tk):
             self._run_onedrive_transfer(); return
         if self.current_task and self.current_task.get("workflow") in ("staff_handoff", "compromised",
                                                                         "admin_roles", "shared_links",
-                                                                        "conditional_access"):
+                                                                        "conditional_access",
+                                                                        "move_to_site",
+                                                                        "team_settings"):
             self._run_record_workflow(self.current_task["workflow"]); return
 
         got = self._preview_argv()

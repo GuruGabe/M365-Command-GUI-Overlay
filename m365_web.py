@@ -385,6 +385,9 @@ def api_workflow(data):
         elif name == "staff_handoff":
             os.makedirs(records, exist_ok=True)
             wf.staff_handoff(capture, job.out, job.ask, job.cancelled, values, records)
+        elif name == "move_to_site":         # v0.15: asks once before moving
+            os.makedirs(records, exist_ok=True)
+            wf.move_to_site(capture, job.out, job.ask, job.cancelled, values, records)
         elif name == "compromised":
             os.makedirs(records, exist_ok=True)
 
@@ -400,6 +403,9 @@ def api_workflow(data):
         elif name == "shared_links":         # v0.14: read-only, asks nothing
             os.makedirs(records, exist_ok=True)
             wf.shared_links(capture, job.out, job.cancelled, values, records)
+        elif name == "team_settings":        # v0.15: read-only, asks nothing
+            os.makedirs(records, exist_ok=True)
+            wf.team_settings(capture, job.out, job.cancelled, values, records)
         elif name == "conditional_access":   # v0.14: read-only, asks nothing
             os.makedirs(records, exist_ok=True)
             wf.conditional_access(capture, job.out, job.cancelled, values, records)

@@ -1,6 +1,64 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-02-2026  v0.15 MOVE ONEDRIVE FILES TO A TEAM OR SHAREPOINT SITE.
+                  - New guided task in OneDrive: Move a user's OneDrive files
+                    to a Team or SharePoint site - the Microsoft version of
+                    moving files to a Google Shared Drive. Pick a Team (its
+                    Files are a SharePoint library) or type any site and
+                    library. Everything in the OneDrive MOVES into a new
+                    folder there.
+                  - Before anything moves: sharing-before.csv records who
+                    has access (and at what level) to every item shared on
+                    its own - sharing does not carry over to another site -
+                    then the file count and size, and one question.
+                  - Same-name files are renamed, never overwritten; a file
+                    left open still moves. Afterwards it counts the files
+                    that arrived, saves moved.csv and takes back the
+                    temporary site access it added. Desktop and browser.
+                  - NOT yet run against a real tenant: SharePoint never
+                    created the OneDrive for the test account. The task
+                    says so - try it on a test account first.
+                  - Tests: tests\test_v015_move_to_site.py.
+                  - Nine read-only SharePoint tasks: a site's owners,
+                    members and visitors; people and groups added to a
+                    site; permission levels; version history settings;
+                    earlier versions of a file; sharing links on a folder;
+                    pages on a site; navigation links on a site; items in
+                    a list.
+                  - Reports (usage): three Office (Microsoft 365 Apps)
+                    activation reports - per person, assigned vs activated,
+                    and by device type.
+                  - Tests: tests\test_v015_office_activations.py.
+                  - External (guest) users files were shared with: notes
+                    that CLI v11.11 can hide the whole list (it shows the
+                    people only when SharePoint also sends a count above 0;
+                    fixed in CLI 12.0) and points to List guest users.
+                  - Tests: tests\test_v015_sharepoint_more.py.
+                  - FIX: Groups > Remove member from group failed for a
+                    group owner who was not also a member (the CLI removes
+                    both roles unless told which); it now passes
+                    --suppressNotFound and removes the person in whatever
+                    role they hold. Found in the first live run of the
+                    tasks that change things (throwaway accounts) - every
+                    other user, group and Team change task worked as built,
+                    including usage location and assign / remove license.
+                  - Tests: tests\test_v015_live_changes.py.
+                  - New guided, read-only task in Teams / M365 Groups: Team
+                    settings review. One Team, or every Team when the box
+                    is left blank: visibility, archived, owner / member /
+                    guest counts, and the guest, member, messaging and fun
+                    settings in plain words. Points out a Team with no
+                    owner, a public Team, guests, and guests who can
+                    create, edit or delete channels. Saves
+                    team-settings.csv in Records\TeamSettings_...
+                    Desktop and browser.
+                  - SharePoint: API permissions approved for SharePoint
+                    and API permission requests waiting for approval
+                    (SharePoint admin center > Advanced > API access).
+                  - Tests: tests\test_v015_team_settings.py,
+                    tests\test_v015_web_team_settings.py,
+                    tests\test_v015_api_access.py.
 10-30-2026  v0.14 MORE SHAREPOINT: GROUPS, LISTS, FILES, SHARING.
                   - New guided, read-only task in SharePoint: Files shared
                     by link in a folder. Checks every file in one folder

@@ -6,11 +6,12 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 156 tasks in 13 sections (counted 10-29-2026, v0.14), plus a Custom-command
-  mode and seven guided workflows: staff hand-off, remove all guest users,
+- 172 tasks in 13 sections (counted 10-30-2026, v0.15), plus a Custom-command
+  mode and nine guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
-  user, who holds admin roles, files shared by link and Conditional Access
-  review (the last three read-only).
+  user, move a user's OneDrive files to a Team or SharePoint site, who holds
+  admin roles, files shared by link, Conditional Access review and Team
+  settings review (the last four read-only).
 - Search, Favorites and Recent, Pick... lists, Save results to CSV / JSON,
   Run for each CSV row, a Connection list (v0.11), Settings > Set up the
   CLI and Settings > Dark mode (v0.12).
@@ -33,8 +34,12 @@
   Invite a guest).
 - More Teams and SharePoint coverage. v0.14 added SharePoint groups and
   members, lists and libraries, files, sharing links / sharing details and
-  hub sites. Still open (read-only candidates the gap finder lists): folder
-  sharing links, list items, page / navigation details, content types.
+  hub sites; v0.15 a site's owners / members / visitors, people added to a
+  site, permission levels, version history settings, earlier versions of a
+  file, folder sharing links, pages, navigation links, list items, the
+  SharePoint API permissions and a Team settings review. Still open
+  (read-only candidates the gap finder lists): content types, page
+  sections / web parts.
 - Live tests of the tasks that change things and of the guided workflows,
   on throwaway accounts.
 
@@ -57,6 +62,97 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-02-2026 (v0.15): usage location + Assign / Remove license(s) live OK
+  (free Power BI SKU added and removed, A1 kept). The test user's OneDrive
+  was NEVER created (3 Request-SPOPersonalSite runs, 10-30 to 11-02; a 90
+  minute watch ended 09:46 11-02) -> the OneDrive move is NOT live-tested.
+  Gabe: ship 0.15 with it anyway (may work for others); the task, release
+  notes and CHANGELOG say it has not run against a real tenant. Still not
+  live-run: the move, block / unblock, delete / restore user.
+- 11-02-2026 (v0.15): FIRST live run of the CHANGE tasks (throwaway user
+  m365gui.movetest@<tenant>.onmicrosoft.com, the Team 'M365GUI Move Test',
+  throwaway security groups made and deleted): rename user, job fields,
+  set / remove manager, password check, reset password, create / rename /
+  delete group, add member, make owner, Team add / role / remove - all OK as
+  built. 'Remove member from group' FAILED for an owner who was not a member
+  ('entra group member remove' without --role removes both roles and
+  errors on the missing one) -> + --suppressNotFound (CLI 11.11 and 12.0);
+  live: owner-only and member-only both removed. Entra refuses to remove a
+  group's LAST owner - the description says so. Then usage location (set
+  to US), Assign / Remove license(s) (the free Power BI SKU; the A1 license
+  kept) - OK. Not run yet: block / unblock, delete / restore user (they wait
+  for the OneDrive move test). Tests: test_v015_live_changes.py.
+- 11-02-2026 (v0.15): CLI 12.0 is in beta (npm tag next, 12.0.0-beta.235caf5).
+  Its release notes list 10 breaking changes; _scratch\m365_cli_compat.py
+  compared every command and option M365GUI uses (catalog templates and the
+  lists in m365_workflows.py - 206 uses in 0.15, 179 in 0.14) with the
+  beta's allCommandsFull.json (package downloaded, NOT installed): nothing
+  missing (the checker does catch a removed command / option). M365GUI uses
+  none of --recycle / --skipRecycleBin / 'spo file add' / 'spo listitem get
+  --properties'; 'spo navigation node list' (new output shape) is a text
+  task. #7674 (spo externaluser list) closed 10-31, fixed in 12.0 - the
+  task's description says so. Tests: test_v015_sharepoint_more.py.
+- 10-30-2026 (v0.15): + Team settings review (m365_workflows.team_settings,
+  read-only, Teams / M365 Groups): one Team by name or id, or every Team
+  when blank. 'teams team get --id' answers guestSettings, memberSettings,
+  messagingSettings, funSettings, discoverySettings, visibility,
+  isArchived and summary (owners / members / guests counts) in ONE call,
+  so the four 'teams <x>settings list' commands (--teamId only) are not
+  needed. Notes: no owner (unless archived), public, guests, guests who
+  can create / edit / delete channels. 'Members can delete channels' is
+  ON by default (every Team on the live run), so it is shown but not
+  pointed out. Run live (read-only) on every Team, one by name and an
+  unknown name. + API permissions approved for SharePoint (spo
+  serviceprincipal grant list - its own columns are ids, so --query puts
+  Scope first) and API permission requests waiting for approval (spo
+  serviceprincipal permissionrequest list), both run live. Skipped (empty
+  on the test tenant, so their columns could not be checked): home sites,
+  organization news sites, org assets libraries, site designs / scripts,
+  tenant app catalog apps, a site's app permissions. Tests:
+  tests\test_v015_team_settings.py, test_v015_web_team_settings.py,
+  test_v015_api_access.py.
+- 10-30-2026 (v0.15): six read-only SharePoint tasks, each run live
+  (read-only): spo site membership list (works on any site), spo user
+  list / roledefinition list / site versionpolicy get (answer
+  'Attempted to perform an unauthorized operation' on a site the
+  signed-in admin cannot open), spo file version list (an empty list =
+  only the current version), spo folder sharinglink list. Found a CLI
+  v11.11 bug: 'spo externaluser list' prints people only when
+  SharePoint's TotalUserCount > 0, and SharePoint sent people with a
+  count of 0 - so nothing at all was shown. The existing task now says
+  so and points to 'List guest users'. The Teams guest / member /
+  messaging / fun settings commands were skipped: 'Get a Team's
+  settings' (teams team get) already shows them (see Team settings
+  review, below). Tests:
+  tests\test_v015_sharepoint_more.py.
+- 10-30-2026 (v0.15): + Pages on a site (spo page list - its text output
+  shows only Title, so a JMESPath --query picks Title, FileName, Url,
+  Modified), Navigation links on a site (QuickLaunch / TopNavigationBar)
+  and Items in a list (optional --fields). All run live, read-only, on
+  the root site exactly as build_command makes them. The CLI bug was
+  reported as pnp/cli-microsoft365#7674 (with the maintainer's OK); drop
+  the warning from the external-users task once it is fixed.
+- 10-30-2026 (v0.15): + three Office activation reports (tenant report
+  office365activationsuserdetail / office365activationsusercounts /
+  office365activationcounts - NO --period, run live: per person, assigned
+  vs activated, by device type). test_v010_live.py now expects 14 usage
+  reports. Tests: tests\test_v015_office_activations.py.
+- 10-29-2026 (v0.15): Move a user's OneDrive files to a Team or SharePoint
+  site (m365_workflows.move_to_site), asked for by the maintainer (move,
+  Team picker OR any site + library). Read-only checks first: Team -> site
+  = 'spo site list' GroupId '/Guid(<id>)/' equals the Team id (Graph
+  groups/{id}/sites/root answered 403 and 'm365group get --withSiteUrl'
+  'Access denied'); library root via 'spo list list --properties
+  Title,RootFolder/ServerRelativeUrl'; 'spo listitem list --fields
+  Id,FileRef,FSObjType,HasUniqueRoleAssignments,File/Length' (6,455 items
+  in 36 s; File_x0020_Size does NOT exist there; FSObjType '0'/'1');
+  'spo listitem get --withPermissions' gives RoleAssignments (Member
+  Title / LoginName, RoleDefinitionBindings Name) for files AND folders,
+  where folder sharing-link lists were empty. 'spo folder move' allows
+  only fail|rename; a OneDrive is on the -my host, so the target is an
+  ABSOLUTE URL. The move itself still needs its live test on throwaway
+  accounts. Tests: tests\test_v015_move_to_site.py.
+- 10-30-2026: v0.14 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-29-2026: v0.13 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-28-2026: v0.12 published by the 5 PM daily release (Release-M365GUI.ps1).
 

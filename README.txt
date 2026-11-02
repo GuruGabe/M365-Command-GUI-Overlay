@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 156
-   admin tasks as fill-in forms across 13 sections (v0.14): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 172
+   admin tasks as fill-in forms across 13 sections (v0.15): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security and Diagnostics
    - plus a Custom-command mode for any m365 command.
@@ -135,6 +135,15 @@
    block policies that are ON. Saves conditional-access.csv in a
    Records\ConditionalAccess_... folder. Needs Policy.Read.All.
 
+   TEAM SETTINGS REVIEW (Teams / M365 Groups, v0.15): read-only - asks
+   nothing and changes nothing. One Team (type or Pick... its name), or
+   every Team when the box is left blank: who can find and join it,
+   whether it is archived, how many owners, members and guests it has, and
+   its guest, member, messaging and fun settings in plain words. Points
+   out a Team with no owner, a public Team, guests, and guests who can
+   create, edit or delete channels. Saves team-settings.csv in a
+   Records\TeamSettings_... folder.
+
    FILES SHARED BY LINK IN A FOLDER (SharePoint, v0.14): read-only - asks
    nothing and changes nothing. Checks every file in one folder of a site
    or OneDrive (and its subfolders, if chosen) for sharing links - by
@@ -143,6 +152,19 @@
    a Records\SharedLinks_... folder. The link addresses are never shown
    or saved. One check per file (up to 2,000 per run), so a big library
    takes a while; Stop ends it after the current file.
+
+   MOVE A USER'S ONEDRIVE FILES TO A TEAM OR SHAREPOINT SITE (OneDrive
+   section, v0.15): the Microsoft version of a Google Shared Drive is a
+   Team's (SharePoint site's) document library. Fill in the person and
+   EITHER a Team OR a site address (and library, default Documents).
+     - First: a record of who has access to every item shared on its own
+       (sharing-before.csv in Records\MoveToSite_...) - sharing does not
+       carry over to another site, so check it after the move.
+     - Then it shows the file count and size and ASKS. Nothing moves on No.
+     - Everything MOVES (leaves the OneDrive) into a new folder, default
+       'Files from <name> MM-DD-YYYY'; same-name files are renamed.
+     - Afterwards it counts the files that arrived (moved.csv lists each
+       item) and takes back the temporary site access it added.
 
    COPY A USER'S ONEDRIVE FILES TO ANOTHER USER (OneDrive section, v0.4):
      - Copies EVERYTHING in the From user's OneDrive into a new folder in the

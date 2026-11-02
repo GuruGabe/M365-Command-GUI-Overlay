@@ -27,8 +27,9 @@ def is_usage_report(template):
 
 reports = [(cat, t) for cat, ts in c.TASKS.items() for t in ts if is_usage_report(t["template"])]
 # 9 in v0.10; 11 since 10-28-2026 (v0.12: mailbox quota counts, OneDrive
-# storage for the whole organization).
-check(len(reports) == 11, "the 11 usage reports are found (%d)" % len(reports))
+# storage for the whole organization); 14 since 10-30-2026 (v0.15: the three
+# Office activation reports).
+check(len(reports) == 14, "the 14 usage reports are found (%d)" % len(reports))
 for cat, t in reports:
     check("--output csv" in t["template"] and "--output text" not in t["template"],
           "%s: runs with --output csv (report commands refuse text)" % t["name"])

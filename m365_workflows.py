@@ -2,7 +2,7 @@
 # Script:   m365_workflows.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  10-23-2026 (moved out of M365GUI.py, v0.6)
-# Modified: 10-29-2026 (v0.14: Files shared by link in a folder - read-only)
+# Modified: 10-30-2026 (v0.15: Settings of a Team - read-only)
 #
 # Purpose:
 #   M365GUI's guided workflows - tasks that run several m365 commands in a
@@ -297,6 +297,272 @@ class _Steps:
         buf = io.StringIO()
         csv.writer(buf, lineterminator="\n").writerows(self.rows)
         return buf.getvalue()
+
+# =============================================================================
+# SECTION: Move a user's OneDrive files to a Team / SharePoint site (v0.15,
+#   10-29-2026) - the Microsoft counterpart of GAMGUI's Move to Shared Drive.
+#   A Team's files live in its SharePoint site's document library, so the
+#   files MOVE there (they leave the OneDrive), into a new folder. Before
+#   anything moves: a record of every item that has its OWN permissions
+#   (who and what level - 'spo listitem get --withPermissions'), because
+#   sharing does not carry over to another site, and one question. Built
+#   from commands checked read-only on 10-29-2026: the Team -> site match
+#   (spo site list GroupId '/Guid(<id>)/' = the Team id; Graph
+#   groups/{id}/sites/root and 'm365group get --withSiteUrl' were refused),
+#   'spo listitem list --fields FileRef,FSObjType,HasUniqueRoleAssignments'
+#   (6,455 items in 36 s), the library root folder via 'spo list list
+#   --properties Title,RootFolder/ServerRelativeUrl'. The MOVE itself
+#   ('spo folder|file move' to an absolute URL on another host) still needs
+#   its live test on throwaway accounts.
+# =============================================================================
+
+MOVE_DEFAULT_LIBRARY = "Documents"   # a Team site's library (its folder is 'Shared Documents')
+
+def _guid(value):
+    # SharePoint shows a group id as '/Guid(<id>)/'; Teams as plain '<id>'.
+    text = (value or "").strip().lower()
+    if text.startswith("/guid(") and text.endswith(")/"):
+        text = text[6:-2]
+    return text
+
+def _find_team_site(run, team_name):
+    # (site URL, error) for a Team's display name.
+    rc, text = run(["teams", "team", "list", "--output", "json"])
+    teams = parse_json(text) if rc == 0 else None
+    if not isinstance(teams, list):
+        return "", "Could not list the Teams: " + " ".join((text or "").split())[:300]
+    found = [t for t in teams if (t.get("displayName") or "").strip().lower() == team_name.lower()]
+    if not found:
+        return "", "No Team is called '%s'." % team_name
+    if len(found) > 1:
+        return "", ("%d Teams are called '%s' - type the site address in the Site URL box "
+                    "instead." % (len(found), team_name))
+    rc, text = run(["spo", "site", "list", "--output", "json"])
+    sites = parse_json(text) if rc == 0 else None
+    if not isinstance(sites, list):
+        return "", "Could not list the SharePoint sites: " + " ".join((text or "").split())[:300]
+    for s in sites:
+        if _guid(s.get("GroupId")) == (found[0].get("id") or "").lower() and s.get("Url"):
+            return s["Url"].rstrip("/"), ""
+    return "", "Could not find the SharePoint site of the Team '%s'." % team_name
+
+def _find_library(run, site, library):
+    # The server-relative folder of a document library, found by its title
+    # or the last part of its address. (folder, error).
+    rc, text = run(["spo", "list", "list", "--webUrl", site, "--filter",
+                    "BaseTemplate eq 101 and Hidden eq false", "--properties",
+                    "Title,RootFolder/ServerRelativeUrl", "--output", "json"])
+    libs = parse_json(text) if rc == 0 else None
+    if not isinstance(libs, list):
+        return "", "Could not list the libraries of %s: %s" % (site, " ".join((text or "").split())[:300])
+    want = library.strip().strip("/").lower()
+    for lib in libs:
+        root = ((lib.get("RootFolder") or {}).get("ServerRelativeUrl") or "").rstrip("/")
+        if want in ((lib.get("Title") or "").lower(), root.split("/")[-1].lower()):
+            return root, ""
+    names = ", ".join(sorted(l.get("Title") or "?" for l in libs))
+    return "", "%s has no library called '%s' (it has: %s)." % (site, library, names or "none")
+
+def _permission_rows(run, web, item):
+    # CSV rows for one item that has its own permissions: who and what level.
+    rc, text = run(["spo", "listitem", "get", "--webUrl", web, "--listTitle", "Documents", "--id",
+                    str(item.get("Id")), "--withPermissions", "--output", "json"])
+    data = parse_json(text) if rc == 0 else None
+    path = item.get("FileRef") or ""
+    kind = "folder" if str(item.get("FSObjType")) == "1" else "file"
+    if not isinstance(data, dict):
+        return [[path, kind, "COULD NOT READ", "", " ".join((text or "").split())[:200]]]
+    rows = []
+    for ra in data.get("RoleAssignments") or []:
+        member = ra.get("Member") or {}
+        levels = ", ".join(b.get("Name") or "" for b in ra.get("RoleDefinitionBindings") or [])
+        rows.append([path, kind, member.get("Title") or "", member.get("LoginName") or "", levels])
+    return rows or [[path, kind, "(nobody listed)", "", ""]]
+
+def move_to_site(run, out, confirm, cancelled, values, records_base):
+    # run / out / confirm / cancelled as in transfer_onedrive. Returns a
+    # summary dict (ok, error, folder, moved, failed, src_files, dst_files).
+    result = {"ok": False, "error": "", "folder": "", "moved": 0, "failed": 0,
+              "src_files": 0, "dst_files": 0}
+    src_upn = clean_identifier(values.get("from") or "").strip()
+    team = (values.get("team") or "").strip()
+    site = clean_identifier(values.get("url") or "").strip().rstrip("/")
+    library = (values.get("library") or "").strip() or MOVE_DEFAULT_LIBRARY
+    folder = (values.get("folder") or "").strip() or default_transfer_folder(src_upn)
+    keep_access = values.get("access") == TRANSFER_ACCESS_KEEP
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    # ---- 1. check the boxes before running anything ----------------------------
+    problem = _check_upn("From", src_upn)
+    if problem:
+        return stop(problem)
+    if bool(team) == bool(site):
+        return stop("Fill in EITHER the Team box OR the Site URL box (not both).")
+    if site and not site.lower().startswith("https://"):
+        return stop("The Site URL box needs a site address such as "
+                    "https://contoso.sharepoint.com/sites/Team.")
+    if BAD_FOLDER_CHARS & set(folder) or folder.endswith("."):
+        return stop('The folder name cannot contain " * : < > ? / \\ | or end with a period.')
+
+    out("\n===== MOVE ONEDRIVE FILES TO A SHARED LIBRARY: %s =====\n" % src_upn)
+    rc, text = run(["status", "--output", "json"])
+    operator = (parse_json(text) or {}).get("connectedAs", "") if rc == 0 else ""
+    if not operator:
+        return stop("m365 is not signed in. Run 'm365 login' first.")
+
+    # ---- 2. the OneDrive and the destination ------------------------------------
+    rc, text = run(["entra", "user", "get", "--userName", src_upn,
+                    "--properties", "userPrincipalName,mySite", "--output", "json"])
+    info = parse_json(text) if rc == 0 else None
+    if not isinstance(info, dict):
+        return stop("Could not find %s: %s" % (src_upn, text.strip()[:300]))
+    if not info.get("mySite"):
+        return stop("%s has no OneDrive - nothing to move." % src_upn)
+    src_web, src_host, src_lib = onedrive_paths(info["mySite"])
+    if team:
+        site, err = _find_team_site(run, team)
+        if err:
+            return stop(err)
+    dst_host = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(site))
+    out("From: %s\nTo:   %s (library '%s')\n" % (src_web, site, library))
+
+    records = _record_dir(records_base, "MoveToSite", src_upn)
+    result["folder"] = records
+    added = []                                    # sites where WE added access
+    try:
+        # ---- 3. access: site collection admin on both, for this run --------------
+        for web in (src_web, site):
+            rc, text = run(["spo", "site", "admin", "list", "--siteUrl", web, "--asAdmin",
+                            "--output", "json"])
+            admins = parse_json(text) if rc == 0 else None
+            if not isinstance(admins, list):
+                return stop("Could not read who can manage %s: %s\nMoving needs a SharePoint "
+                            "administrator (or Global administrator) signed in to m365." %
+                            (web, text.strip()[:300]))
+            if not _is_site_admin(admins, operator):
+                rc, text = run(["spo", "site", "admin", "add", "--siteUrl", web,
+                                "--userName", operator, "--asAdmin", "--output", "json"])
+                if rc != 0:
+                    return stop("Could not give %s access to %s: %s" % (operator, web, text.strip()[:300]))
+                added.append(web)
+                out("Gave %s temporary access to %s\n" % (operator, web))
+
+        dst_lib, err = _find_library(run, site, library)
+        if err:
+            return stop(err)
+
+        # ---- 4. what is there, and who it is shared with ---------------------------
+        hidden = src_lib + "/Forms"
+        out("Listing %s's OneDrive - on a large OneDrive this can take a few minutes...\n" % src_upn)
+        rc, text = run(["spo", "listitem", "list", "--webUrl", src_web, "--listTitle", "Documents",
+                        # 'File/Length' (File_x0020_Size does not exist here - live 10-29-2026)
+                        "--fields", "Id,FileRef,FSObjType,HasUniqueRoleAssignments,File/Length",
+                        "--output", "json"])
+        every = parse_json(text) if rc == 0 else None
+        if not isinstance(every, list):
+            return stop("Could not list %s's OneDrive: %s" % (src_upn, text.strip()[:300]))
+        every = [i for i in every if not (i.get("FileRef") or "").startswith(hidden + "/")]
+        files = [i for i in every if str(i.get("FSObjType")) != "1"]
+        result["src_files"] = len(files)
+        total = sum(int((i.get("File") or {}).get("Length") or 0) for i in files)
+        top = [i for i in every if (i.get("FileRef") or "").rsplit("/", 1)[0] == src_lib
+               and (i.get("FileRef") or "") != hidden]
+        if not top:
+            return stop("%s's OneDrive is empty - nothing to move." % src_upn)
+        unique = [i for i in every if i.get("HasUniqueRoleAssignments")]
+        out("Saving who has access to the %d item(s) shared on their own...\n" % len(unique))
+        perm_rows = [["item", "type", "who", "sign-in name", "permission"]]
+        for item in unique:
+            if cancelled():
+                return stop("[Stopped - nothing was moved.]")
+            perm_rows.extend(_permission_rows(run, src_web, item))
+        import io
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator="\n").writerows(perm_rows)
+        if not _save(records, "sharing-before.csv", buf.getvalue(), out):
+            return stop("Could not save the sharing record - nothing was moved.")
+
+        question = ("MOVE %d files (%s) - %d top-level item(s)\nFROM %s's OneDrive\n"
+                    "TO a new folder '%s' in %s (library '%s')?\n\nThe files will no longer be "
+                    "in %s's OneDrive. %d item(s) were shared on their own - who had access is "
+                    "saved in sharing-before.csv; check the sharing in the new place after the "
+                    "move. Files with the same name are renamed, never overwritten."
+                    % (len(files), size_text(total), len(top), src_upn, folder, site, library,
+                       src_upn, len(unique)))
+        out(question + "\n")
+        if not confirm(question):
+            return stop("Canceled - nothing was moved.")
+
+        # ---- 5. the destination folder, then move each top-level item -----------
+        rc, text = run(["spo", "folder", "add", "--webUrl", site, "--parentFolderUrl", dst_lib,
+                        "--name", folder, "--output", "json"])
+        made = parse_json(text) if rc == 0 else None
+        if not isinstance(made, dict):
+            return stop("Could not create the folder '%s' in %s: %s" % (folder, site, text.strip()[:300]))
+        target_srv = made.get("ServerRelativeUrl") or (dst_lib + "/" + folder)
+        target = dst_host + target_srv
+        out("Moving into %s ...\n" % target)
+        rows = [["type", "source", "result", "detail"]]
+        for item in top:
+            if cancelled():
+                out("[Stopped - the rest was not moved.]\n")
+                break
+            kind = "folder" if str(item.get("FSObjType")) == "1" else "file"
+            source = item["FileRef"]
+            argv = ["spo", kind, "move", "--webUrl", src_web, "--sourceUrl", source,
+                    "--targetUrl", target, "--nameConflictBehavior", "rename"]
+            if kind == "file":
+                argv.append("--bypassSharedLock")   # a file left open still moves
+            rc, text = run(argv + ["--output", "json"])
+            name = source[len(src_lib) + 1:]
+            if rc == 0:
+                result["moved"] += 1
+                out("  OK      %s %s\n" % (kind, name))
+                rows.append([kind, source, "moved", ""])
+            else:
+                result["failed"] += 1
+                detail = " ".join(text.split())[:200]
+                out("  FAILED  %s %s - %s\n" % (kind, name, detail))
+                rows.append([kind, source, "FAILED", detail])
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator="\n").writerows(rows)
+        _save(records, "moved.csv", buf.getvalue(), out)
+
+        # ---- 6. check: the files in the new folder, and what is left ---------------
+        out("Counting the files that arrived...\n")
+        rc, text = run(["spo", "file", "list", "--webUrl", site, "--folderUrl", target_srv,
+                        "--recursive", "--fields", "Name,ServerRelativeUrl,Length", "--output", "json"])
+        landed = parse_json(text) if rc == 0 else None
+        if isinstance(landed, list):
+            result["dst_files"] = len(landed)
+            out("Check: %d of %d files are in the new folder.\n" % (len(landed), len(files)))
+            if len(landed) < len(files):
+                out("WARNING: some files did not arrive - see FAILED lines above; what was not "
+                    "moved is still in %s's OneDrive.\n" % src_upn)
+        else:
+            out("Could not count the moved files: %s\n" % text.strip()[:300])
+        result["ok"] = (result["failed"] == 0 and not cancelled()
+                        and result["dst_files"] >= len(files))
+        out("\n===== DONE: %d moved, %d failed. Records: %s =====\n"
+            % (result["moved"], result["failed"], records))
+        return result
+    finally:
+        # ---- 7. take back only the access this run added --------------------------
+        if keep_access:
+            for web in added:
+                out("Your access to %s was KEPT (as chosen).\n" % web)
+        else:
+            for web in added:
+                rc, text = run(["spo", "site", "admin", "remove", "--siteUrl", web,
+                                "--userName", operator, "--asAdmin", "--force", "--output", "json"])
+                out(("Removed your temporary access to %s\n" % web) if rc == 0 else
+                    ("COULD NOT remove your access to %s - remove it in the SharePoint admin "
+                     "center: %s\n" % (web, text.strip()[:200])))
+
 
 # =============================================================================
 # SECTION: Staff hand-off - someone is leaving (v0.8, like GAMGUI's hand-off)
@@ -1167,4 +1433,182 @@ def shared_links(run, out, cancelled, values, records_base):
     result["ok"] = not cancelled() and not failed
     out("\n===== DONE: %d file(s) checked, %d link(s). Saved: %s =====\n"
         % (checked, len(rows), os.path.join(folder_out, "shared-links.csv")))
+    return result
+
+# =============================================================================
+# SECTION: Team settings review (v0.15, read-only) - for one Team, or every
+#   Team when the box is left blank: who can see it, whether it is archived,
+#   how many owners / members / guests it has, and its guest, member,
+#   messaging and fun settings. 'teams team get --id' answers all of it in
+#   one call (run live, read-only, 10-30-2026: guestSettings, memberSettings,
+#   messagingSettings, funSettings, discoverySettings, visibility,
+#   isArchived and summary.ownersCount / membersCount / guestsCount). Nothing
+#   is changed; team-settings.csv is saved in the Records folder.
+# =============================================================================
+
+TEAM_SETTINGS_AREAS = [("guestSettings", "Guests"), ("memberSettings", "Members"),
+                       ("messagingSettings", "Messaging"), ("funSettings", "Fun stuff"),
+                       ("discoverySettings", "Discovery")]
+TEAM_SETTING_NAMES = {
+    ("guestSettings", "allowCreateUpdateChannels"): "Guests can create and edit channels",
+    ("guestSettings", "allowDeleteChannels"): "Guests can delete channels",
+    ("memberSettings", "allowAddRemoveApps"): "Members can add and remove apps",
+    ("memberSettings", "allowCreatePrivateChannels"): "Members can create private channels",
+    ("memberSettings", "allowCreateUpdateChannels"): "Members can create and edit channels",
+    ("memberSettings", "allowCreateUpdateRemoveConnectors"): "Members can add, edit and remove connectors",
+    ("memberSettings", "allowCreateUpdateRemoveTabs"): "Members can add, edit and remove tabs",
+    ("memberSettings", "allowDeleteChannels"): "Members can delete channels",
+    ("messagingSettings", "allowChannelMentions"): "@channel mentions allowed",
+    ("messagingSettings", "allowOwnerDeleteMessages"): "Owners can delete anyone's messages",
+    ("messagingSettings", "allowTeamMentions"): "@team mentions allowed",
+    ("messagingSettings", "allowUserDeleteMessages"): "People can delete their own messages",
+    ("messagingSettings", "allowUserEditMessages"): "People can edit their own messages",
+    ("funSettings", "allowCustomMemes"): "Custom memes allowed",
+    ("funSettings", "allowGiphy"): "Giphy (animated pictures) allowed",
+    ("funSettings", "allowStickersAndMemes"): "Stickers and memes allowed",
+    ("funSettings", "giphyContentRating"): "Giphy content rating",
+    ("discoverySettings", "showInTeamsSearchAndSuggestions"): "Shown in Teams search and suggestions",
+}
+# Settings worth a second look when they are ON (true) - both are OFF by
+# default. 'Members can delete channels' is ON by default in every Team (all
+# three on the live run), so it is shown but not pointed out.
+TEAM_SETTING_NOTES = {
+    ("guestSettings", "allowCreateUpdateChannels"): "guests can create and edit channels",
+    ("guestSettings", "allowDeleteChannels"): "guests can delete channels",
+}
+
+def _looks_like_id(text):
+    # A Team / group id: 36 characters of hex digits and dashes.
+    return len(text) == 36 and all(ch in "0123456789abcdefABCDEF-" for ch in text)
+
+def _setting_text(value):
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    if value is None:
+        return "(not set)"
+    return str(value)
+
+def _team_rows(team):
+    # One Team's 'teams team get' JSON -> [(area, setting, value, raw)] in
+    # the order they are shown.
+    summary = team.get("summary") if isinstance(team.get("summary"), dict) else {}
+    rows = [("General", "Who can find and join it (visibility)", _setting_text(team.get("visibility")),
+             team.get("visibility")),
+            ("General", "Archived (read-only)", _setting_text(team.get("isArchived")),
+             team.get("isArchived")),
+            ("General", "Owners", _setting_text(summary.get("ownersCount")), summary.get("ownersCount")),
+            ("General", "Members", _setting_text(summary.get("membersCount")), summary.get("membersCount")),
+            ("General", "Guests", _setting_text(summary.get("guestsCount")), summary.get("guestsCount"))]
+    for area, area_label in TEAM_SETTINGS_AREAS:
+        got = team.get(area)
+        if not isinstance(got, dict):
+            continue
+        for key in sorted(got):
+            rows.append((area_label, TEAM_SETTING_NAMES.get((area, key), key),
+                         _setting_text(got[key]), got[key]))
+    return rows
+
+def _team_notes(team):
+    # The plain-words notes for one Team (things worth a second look).
+    notes = []
+    summary = team.get("summary") if isinstance(team.get("summary"), dict) else {}
+    if summary.get("ownersCount") == 0 and not team.get("isArchived"):
+        notes.append("no owner - nobody can manage its members or settings")
+    if (team.get("visibility") or "").lower() == "public":
+        notes.append("public - anyone in the organization can find and join it")
+    if summary.get("guestsCount"):
+        notes.append("%s guest(s)" % summary.get("guestsCount"))
+    for (area, key), text in sorted(TEAM_SETTING_NOTES.items()):
+        if isinstance(team.get(area), dict) and team[area].get(key) is True:
+            notes.append(text)
+    return notes
+
+def team_settings(run, out, cancelled, values, records_base):
+    result = {"ok": False, "error": "", "folder": "", "teams": 0, "notes": 0}
+    wanted = clean_identifier(values.get("team") or "").strip()
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    out("\n===== TEAM SETTINGS REVIEW: %s =====\n"
+        % (("'%s'" % wanted) if wanted else "every Team"))
+    out("Listing the Teams...\n")
+    rc, text = run(["teams", "team", "list", "--output", "json"])
+    teams = parse_json(text) if rc == 0 else None
+    if not isinstance(teams, list):
+        return stop("Could not list the Teams: " +
+                    (" ".join((text or "").split())[:300] or "no answer"))
+    teams = [t for t in teams if isinstance(t, dict) and t.get("id")]
+    if wanted:
+        if _looks_like_id(wanted):
+            teams = [t for t in teams if t["id"].lower() == wanted.lower()]
+        else:
+            teams = [t for t in teams
+                     if (t.get("displayName") or "").strip().lower() == wanted.lower()]
+        if not teams:
+            return stop("No Team is called '%s'. (Leave the box blank for every Team.)" % wanted)
+        if len(teams) > 1:
+            out("NOTE: %d Teams are called '%s' - each one is shown, with its id.\n"
+                % (len(teams), wanted))
+    teams.sort(key=lambda t: (t.get("displayName") or "").lower())
+    out("%d Team(s) to read.\n" % len(teams))
+
+    rows, notes, failed, done = [], [], [], 0
+    for listed in teams:
+        if cancelled():
+            break
+        name = listed.get("displayName") or listed["id"]
+        rc, text = run(["teams", "team", "get", "--id", listed["id"], "--output", "json"])
+        team = parse_json(text) if rc == 0 else None
+        if not isinstance(team, dict):
+            why = " ".join((text or "").split())[:200] or "no answer"
+            failed.append((name, listed["id"], why))
+            out("\n%s  (id %s)\n  COULD NOT READ - %s\n" % (name, listed["id"], why))
+            continue
+        done += 1
+        out("\n%s  (id %s)\n" % (name, listed["id"]))
+        area_now = ""
+        for area_label, setting, shown, _raw in _team_rows(team):
+            if area_label != area_now:
+                area_now = area_label
+                out("  %s:\n" % area_label)
+            out("    %-46s %s\n" % (setting, shown))
+            rows.append({"team": name, "id": listed["id"], "area": area_label,
+                         "setting": setting, "value": shown})
+        for n in _team_notes(team):
+            notes.append("%s: %s" % (name, n))
+    result["teams"], result["notes"] = done, len(notes)
+    if cancelled():
+        out("\n[Stopped after %d of %d Team(s).]\n" % (done + len(failed), len(teams)))
+
+    # ---- summary: the things worth a second look --------------------------------
+    out("\n%d Team(s) read.\n" % done)
+    if notes:
+        out("Worth a second look:\n")
+        for n in notes:
+            out("  - %s\n" % n)
+    elif done:
+        out("Nothing to point out: every Team has an owner, none is public or has guests, "
+            "and none lets guests create, edit or delete channels.\n")
+
+    # ---- the record ------------------------------------------------------------------
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    columns = ["team", "id", "area", "setting", "value"]
+    writer.writerow(columns)
+    for r in rows:
+        writer.writerow([r[c] for c in columns])
+    for name, ident, why in failed:
+        writer.writerow([name, ident, "", "COULD NOT READ", why])
+    folder_out = _record_dir(records_base, "TeamSettings", wanted or "all-teams")
+    result["folder"] = folder_out
+    _save(folder_out, "team-settings.csv", buf.getvalue(), out)
+    result["ok"] = not cancelled() and not failed
+    out("\n===== DONE: %d Team(s), %d note(s). Saved: %s =====\n"
+        % (done, len(notes), os.path.join(folder_out, "team-settings.csv")))
     return result

@@ -194,8 +194,15 @@ TASKS = {
     "entra group member add --groupName {name} --userNames {email} --role {role}",
     [F("Group display name", "name"), F("User (UPN)", "email"),
      F("Role", "role", choices=["Member", "Owner"])]),
-  T("Remove member from group (DESTRUCTIVE)", "Removes a user from a group.",
-    "entra group member remove --groupName {name} --userNames {email} --force",
+  # v0.15 (11-02-2026, first live run): without --role the CLI removes the
+  # person as owner AND member and failed ("Resource ... does not exist")
+  # for an owner who is not also a member; --suppressNotFound (CLI 11.11 and
+  # 12.0) removes them from whichever role they hold.
+  T("Remove member from group (DESTRUCTIVE)",
+    "Removes a user from a group - as a member, an owner, or both. Microsoft does "
+    "not let you remove a group's LAST owner (\"The group must have at least one "
+    "owner\") - add another owner first.",
+    "entra group member remove --groupName {name} --userNames {email} --suppressNotFound --force",
     [F("Group display name", "name"), F("User (UPN)", "email")],
     destructive=True),
   T("Delete group (DESTRUCTIVE)", "Deletes a group (not its members' accounts).",
@@ -273,6 +280,15 @@ TASKS = {
     "teams team list --joined --userName {email} --output text", [F("User (UPN)", "email")]),
   T("Get a Team's settings", "Shows one Team's settings (messaging, guests, fun settings...).",
     "teams team get --name {team} --output text", [F("Team display name", "team")]),
+  # ---- v0.15 (10-30-2026): guided, read-only (m365_workflows.team_settings) --
+  T("Team settings review",
+    "One Team - or every Team when the box is left blank - in plain words: who can find "
+    "and join it, whether it is archived, how many owners, members and guests it has, and "
+    "its guest, member, messaging and fun settings. Points out a Team with no owner, a "
+    "public Team, guests, and guests who can create, edit or delete channels. "
+    "Changes nothing; a CSV is saved in the Records folder.",
+    "", [F("Team display name (blank = every Team)", "team", False)],
+    workflow="team_settings"),
   T("Create a Team",
     "Creates a new Team (with its Microsoft 365 group and SharePoint site) and waits until "
     "it is ready. Owners / members: comma-separated sign-in names.",
@@ -518,6 +534,21 @@ TASKS = {
     "Total OneDrive storage used each day (bytes).",
     "onedrive report usagestorage --period {period} --output csv",
     [F("Period", "period", choices=["D7", "D30", "D90", "D180"], default="D30")]),
+  # v0.15 (10-30-2026): Microsoft 365 Apps (Office) activations - these three
+  # reports take NO --period (checked with --help, CLI v11.11) and were run
+  # live: counts by product and device type, assigned vs activated, and one
+  # row per person and product.
+  T("Office activations - per person",
+    "Each person's Microsoft 365 Apps (Office) activations: which product, when it was last "
+    "activated and on how many Windows, Mac, iOS and Android devices, and shared computers.",
+    "tenant report office365activationsuserdetail --output csv", []),
+  T("Office activations - assigned vs activated (counts)",
+    "For each Office product: how many people have it assigned, how many activated it, and "
+    "how many activations are on shared computers.",
+    "tenant report office365activationsusercounts --output csv", []),
+  T("Office activations by device type (counts)",
+    "For each Office product: how many activations are on Windows, Mac, Android and iOS.",
+    "tenant report office365activationcounts --output csv", []),
  ],
  "Roles and admin units": [
   # ---- v0.13 (10-28-2026): guided, read-only (m365_workflows.admin_roles) ----
@@ -617,8 +648,14 @@ TASKS = {
   T("Restore everything in a site's recycle bin",
     "Restores every item in the site's (first-stage) recycle bin.",
     "spo site recyclebinitem restore --siteUrl {url} --allPrimary", [F("Site URL", "url")]),
+  # v0.15: CLI v11.11 prints this list only when SharePoint's TotalUserCount
+  # is above 0, and SharePoint can answer TotalUserCount 0 WITH the people in
+  # the list (seen live 10-30-2026) - then nothing is shown at all.
   T("External (guest) users files were shared with",
-    "People outside the organization who were given access - for every site, or one.",
+    "People outside the organization who were given access - for every site, or one. "
+    "If nothing at all is shown, the CLI may be hiding the list (a CLI v11.11 problem: it "
+    "shows the people only when SharePoint also sends a count above 0 - fixed in CLI "
+    "12.0) - use 'List guest users' in Users to see every guest account.",
     "spo externaluser list [--siteUrl {url}] --output text",
     [F("Only this site (optional)", "url", False)]),
   T("SharePoint organization settings", "The SharePoint / OneDrive settings for the whole organization.",
@@ -675,6 +712,85 @@ TASKS = {
     "The organization's hub sites (sites that join other sites together). An empty "
     "result means there are none.",
     "spo hubsite list --output text", []),
+  # ---- v0.15: more read-only SharePoint (checked live 10-30-2026, CLI v11.11).
+  # 'spo user list', 'spo roledefinition list' and 'spo site versionpolicy
+  # get' answer "Attempted to perform an unauthorized operation" on a site
+  # the signed-in admin cannot open; 'spo site membership list' works on any
+  # site. ('spo externaluser list' is the older task "External (guest) users
+  # files were shared with" - see the note there about CLI v11.11.)
+  T("Owners, members and visitors of a site",
+    "Who is in a site's own Owners, Members and Visitors groups (for a Team's site: the "
+    "Team's owners and members). Choose one role to see only those.",
+    "spo site membership list --siteUrl {url} [--role {role}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Only this role (blank = all)", "role", False, choices=["", "Owner", "Member", "Visitor"])]),
+  T("People and groups added to a site",
+    "Everyone SharePoint knows on one site - people, guests and groups that were given "
+    "access or have opened it. You need to be able to open the site (e.g. as its site "
+    "admin); otherwise SharePoint answers 'unauthorized operation'.",
+    "spo user list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Permission levels on a site",
+    "The permission levels a site uses (Full Control, Edit, Read...) and any custom ones. "
+    "You need to be able to open the site.",
+    "spo roledefinition list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Version history settings of a site",
+    "How many earlier versions of each file a site keeps and for how long (blank = "
+    "SharePoint's default). You need to be able to open the site.",
+    "spo site versionpolicy get --siteUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Earlier versions of a file",
+    "The earlier versions SharePoint kept of one file (when, by whom, size). An empty "
+    "result means the file has only its current version.",
+    "spo file version list --webUrl {url} --fileUrl {file} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("File e.g. /sites/Team/Shared Documents/report.docx", "file")]),
+  T("Sharing links on a folder",
+    "The sharing links made for one folder. 'anonymous' = anyone with the link, 'users' = "
+    "specific people, 'organization' = everyone in the organization; blank = all. An "
+    "empty result means the folder has no links of that kind.",
+    "spo folder sharinglink list --webUrl {url} --folderUrl {folder} [--scope {scope}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Folder e.g. /sites/Team/Shared Documents/Projects", "folder"),
+     F("Only this kind of link (blank = all)", "scope", False,
+       choices=["", "anonymous", "users", "organization"])]),
+  # 'spo page list --output text' shows only the Title column (live
+  # 10-30-2026), so a JMESPath --query picks the useful page fields.
+  T("Pages on a site",
+    "The pages on one site (its Site Pages): title, file name, address and when each was "
+    "last changed.",
+    "spo page list --webUrl {url} "
+    "--query \"[].{Title:Title,FileName:FileName,Url:Url,Modified:Modified}\" --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Navigation links on a site",
+    "The links in a site's menu: QuickLaunch = the menu down the left side, "
+    "TopNavigationBar = the menu across the top.",
+    "spo navigation node list --webUrl {url} --location {location} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Which menu", "location", default="QuickLaunch", choices=["QuickLaunch", "TopNavigationBar"])]),
+  T("Items in a list",
+    "Every item in one list or library on a site (the list's name as 'Lists and "
+    "libraries on a site' shows it). Shows the ID and title; name other columns to see "
+    "them too, e.g. Id,Title,Modified.",
+    "spo listitem list --webUrl {url} --listTitle {list} [--fields {fields}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("List name e.g. Announcements", "list"),
+     F("Columns (optional, comma-separated) e.g. Id,Title,Modified", "fields", False)]),
+  # v0.15 (10-30-2026): SharePoint admin center > Advanced > API access, run
+  # live (read-only). The grant list's own columns are ids (clientId,
+  # principalId, resourceId); --query keeps the permissions first.
+  T("API permissions approved for SharePoint",
+    "The Microsoft Graph and other API permissions approved for SharePoint Framework "
+    "(SPFx) solutions and scripts - every one applies to the whole organization. "
+    "Worth checking for wide ones such as Sites.FullControl.All. ResourceId is the API "
+    "the permission is for.",
+    "spo serviceprincipal grant list "
+    "--query \"[].{Scope:scope,ResourceId:resourceId,Id:id}\" --output text", []),
+  T("API permission requests waiting for approval",
+    "API permissions that SharePoint Framework (SPFx) solutions have asked for and that "
+    "no admin has approved or rejected yet. An empty result means nothing is waiting.",
+    "spo serviceprincipal permissionrequest list --output text", []),
   # ---- v0.14: guided, read-only (m365_workflows.shared_links) ----------------
   T("Files shared by link in a folder",
     "Checks every file in one folder of a site (and its subfolders) for sharing links - "
@@ -763,6 +879,26 @@ TASKS = {
            "folder", False),
          F("Afterwards", "access", choices=[TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP])],
     workflow="onedrive_transfer"),
+  # ---- v0.15 (10-29-2026): guided (m365_workflows.move_to_site) --------------
+  T("Move a user's OneDrive files to a Team or SharePoint site",
+    "MOVES everything in one person's OneDrive into a new folder in a Team's files "
+    "(its SharePoint library) or any SharePoint site - the Microsoft version of moving "
+    "files to a Google Shared Drive. The files leave the OneDrive. Fill in EITHER the "
+    "Team OR the Site URL. First it saves who has access to every item shared on its own "
+    "(sharing does not carry over to another site), shows the file count and asks; "
+    "afterwards it counts the files that arrived. Files with the same name are renamed, "
+    "never overwritten. You need to be a SharePoint or Global administrator: M365GUI "
+    "gives you access to both sites for the move and takes it away afterwards (unless "
+    "you choose to keep it). Records in the Records folder. New in 0.15 and not yet "
+    "run against a real tenant - try it first on a test account with a few files.",
+    "", [F("From: whose files (UPN) e.g. jdoe@contoso.com", "from"),
+         F("Team (its display name) - OR the Site URL below", "team", False),
+         F("Site URL (instead of a Team) e.g. https://contoso.sharepoint.com/sites/Office",
+           "url", False),
+         F("Library on that site (optional - default Documents)", "library", False),
+         F("New folder name (optional - default 'Files from <name> <date>')", "folder", False),
+         F("Afterwards", "access", choices=[TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP])],
+    destructive=True, workflow="move_to_site"),
  ],
  "Diagnostics": [
   T("Login status", "Shows whether the CLI is signed in and to which tenant.",
@@ -823,6 +959,10 @@ TASKS = {
 WORKFLOW_PLANS = {
     "remove_guests": "Workflow: list guests -> confirm (type DELETE) -> remove each. "
                      "Click Run to start.",
+    "move_to_site": "Workflow: find the OneDrive and the Team / site -> give you temporary "
+                    "access -> list everything -> save who has access to items shared on "
+                    "their own -> ask you -> MOVE into the new folder -> count what arrived "
+                    "-> remove the temporary access. Click Run to start.",
     "onedrive_transfer": "Workflow: find both OneDrives -> give you temporary access -> "
                          "count the files -> ask you -> copy into the new folder -> "
                          "count what arrived -> remove the temporary access. Click Run "
@@ -843,6 +983,10 @@ WORKFLOW_PLANS = {
                           "Microsoft Graph -> look up the role, user and group names -> "
                           "describe each policy with notes -> save conditional-access.csv in "
                           "the Records folder. Nothing is changed. Click Run to start.",
+    "team_settings": "Workflow (read-only): list the Teams -> read each Team's settings "
+                     "and its owner, member and guest counts -> show them in plain words "
+                     "with notes -> save team-settings.csv in the Records folder. Nothing "
+                     "is changed. Click Run to start.",
     "shared_links": "Workflow (read-only): list the files in the folder (and subfolders) -> "
                     "read each file's sharing links -> list them with notes -> save "
                     "shared-links.csv in the Records folder (no link addresses). Nothing is "
