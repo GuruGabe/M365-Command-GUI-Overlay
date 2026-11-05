@@ -100,7 +100,7 @@ shutil.rmtree(tmp, ignore_errors=True)
 r, calls, text, tmp = go({"team": ID_C.upper()})
 check(r["ok"] and [c[4] for c in calls if c[2] == "get"] == [ID_C], "an id finds that one Team")
 shutil.rmtree(tmp, ignore_errors=True)
-r, calls, text, tmp = go({"team": "“Testing”"})
+r, calls, text, tmp = go({"team": "\u201cTesting\u201d"})
 check(r["ok"] and [c[4] for c in calls if c[2] == "get"] == [ID_A],
       "pasted curly quotes around the name are removed")
 shutil.rmtree(tmp, ignore_errors=True)

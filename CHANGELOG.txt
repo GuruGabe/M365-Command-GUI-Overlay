@@ -1,6 +1,81 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-02-2026  v0.16 POWER PLATFORM, MORE READ-ONLY CHECKS, LIVE-TESTED CHANGES.
+                  - New section: Power Platform (you need to be a Power
+                    Platform or Global administrator).
+                  - Power Automate flows and Power Apps review (guided,
+                    read-only): every flow and app in every environment -
+                    who made it, on or off, last changed, and each flow's
+                    trigger and connectors in plain words. Points out
+                    flows and apps made by a guest or a deleted account,
+                    ones that can send data outside Microsoft 365, flows
+                    that call web addresses or start when someone calls
+                    theirs, and suspended flows. 'List the flows only' is
+                    faster. Saves power-platform.csv. Desktop and browser.
+                  - Also in Power Platform: environments; tenant settings
+                    (plain names such as OnlyAdminsCreateEnvironments);
+                    owners and run history of a flow; deleted flows
+                    (restorable for 21 days); who can use a Power App;
+                    Copilot Studio agents; on-premises data gateways (only
+                    those you are a gateway admin of); custom connectors
+                    (only those you can use); apps allowed to manage Power
+                    Platform. The CLI refuses some real flow ids with
+                    'flowName: Invalid UUID' - the tasks say so.
+                  - New in SharePoint: content types on a site; apps in
+                    the SharePoint app catalog; sites with their own app
+                    catalog; extensions and list buttons added for
+                    everyone; apps given access to a site (Sites.Selected);
+                    home sites; organization news sites.
+                  - New in Planner: Planner settings for the organization.
+                  - New in Service health and security: AI agent
+                    identities (Entra Agent ID).
+                  - New in Roles and admin units: Remove a user from an
+                    administrative unit (there was only Add). The member
+                    list shows a change after about 15 seconds.
+                  - SECURITY: the session log now masks access tokens
+                    ('Bearer <token>' and bare JWTs). 'm365 ... --debug'
+                    prints them with every request; before, only passwords
+                    were masked.
+                  - FIX: Create group (microsoft365) was refused without
+                    --visibility (the CLI docs say it defaults to Public;
+                    the CLI requires it) -> new 'Who can see and join it'.
+                  - FIX: Restore a deleted Microsoft 365 group also takes
+                    the group id (two deleted groups with one name are
+                    refused by name).
+                  - FIX: Lock a site no longer offers NoAdditions -
+                    SharePoint Online refuses it ('LockState is invalid.
+                    Valid values Unlock, ReadOnly, and NoAccess.') although
+                    the CLI docs list it.
+                  - Outlook tasks on another person's mailbox and the
+                    staff hand-off's automatic reply: signed in as
+                    yourself the CLI refuses ('only if CLI is
+                    authenticated in app-only mode') or Microsoft answers
+                    'Access is denied' - the texts say so and what to do.
+                  - Archive a Team and make its files read-only: explains
+                    Microsoft's 'site url is not available' (new Team).
+                  - Run live on throwaway accounts, Teams and sites, all
+                    OK: create / block / unblock / sign out / delete /
+                    restore / permanently delete a user; create a Team,
+                    add / delete a channel, archive / unarchive, delete,
+                    turn a group into a Team; create a communication /
+                    team site, add / remove a site admin, add to a site
+                    group, lock / unlock, sharing, restore a site's
+                    recycle bin, delete / restore a site; add / remove a
+                    user in an administrative unit. Every new read-only
+                    task was run live too, except Who can use a Power App
+                    (no Power Apps in the test tenant).
+                  - Tests: tests\test_v016_power_platform.py,
+                    tests\test_v016_web_power_platform.py,
+                    tests\test_v016_power_more.py,
+                    tests\test_v016_org_reads.py,
+                    tests\test_v016_org_reads2.py,
+                    tests\test_v016_redact_tokens.py,
+                    tests\test_v016_live_changes.py,
+                    tests\test_v016_ascii.py (every source and document
+                    file stays plain ASCII; look-alike characters a test
+                    needs are written as \u escapes).
+
 11-02-2026  v0.15 MOVE ONEDRIVE FILES TO A TEAM OR SHAREPOINT SITE.
                   - New guided task in OneDrive: Move a user's OneDrive files
                     to a Team or SharePoint site - the Microsoft version of

@@ -6,10 +6,11 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 172
-   admin tasks as fill-in forms across 13 sections (v0.15): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 194
+   admin tasks as fill-in forms across 14 sections (v0.16): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
-   Service health and security, Outlook, Planner, Reports, Security and Diagnostics
+   Service health and security, Outlook, Planner, Reports, Security, Power
+   Platform and Diagnostics
    - plus a Custom-command mode for any m365 command.
 
    For every task M365GUI:
@@ -134,6 +135,18 @@
    authentication, and for every account or group excluded from MFA /
    block policies that are ON. Saves conditional-access.csv in a
    Records\ConditionalAccess_... folder. Needs Policy.Read.All.
+
+   POWER AUTOMATE FLOWS AND POWER APPS REVIEW (Power Platform, v0.16):
+   read-only - asks nothing and changes nothing. Every flow and app in
+   every Power Platform environment, read as an administrator: who made
+   it, whether it is on, when it last changed and each flow's trigger and
+   connectors in plain words. Points out flows and apps made by a guest or
+   by a deleted account, ones that can send data outside Microsoft 365
+   (Gmail, Google Drive, Dropbox, FTP...), flows that call web addresses
+   or start when someone calls theirs, and suspended flows. 'List the
+   flows only' is faster in a big tenant (connectors are then not
+   checked). Saves power-platform.csv in a Records\PowerPlatform_...
+   folder. Needs a Power Platform or Global administrator.
 
    TEAM SETTINGS REVIEW (Teams / M365 Groups, v0.15): read-only - asks
    nothing and changes nothing. One Team (type or Pick... its name), or

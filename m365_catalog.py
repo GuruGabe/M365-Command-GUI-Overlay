@@ -32,6 +32,9 @@ TRANSFER_ACCESS_KEEP = "Keep my access to both OneDrives"
 
 # The 'Which links' choices of Files shared by link (see shared_links, v0.14).
 SHARE_ANYONE = "Anyone-with-the-link links only"
+# v0.16 Power Automate flows and Power Apps review: read each flow's details or not.
+POWER_DETAILS_FULL = "Read each flow's trigger and connectors (slower)"
+POWER_DETAILS_FAST = "List the flows only (faster - nothing is pointed out about connectors)"
 SHARE_ALL = "Every sharing link"
 
 TASKS = {
@@ -97,7 +100,7 @@ TASKS = {
          F("Block sign-in", "block", choices=["Yes", "No"], default="Yes"),
          F("Sign them out everywhere", "signout", choices=["Yes", "No"], default="Yes"),
          F("Copy their OneDrive files to the manager", "copy", choices=["Yes", "No"], default="Yes"),
-         F("Set an automatic reply (needs rights to their mailbox)", "autoreply",
+         F("Set an automatic reply (needs an app-only CLI sign-in)", "autoreply",
            choices=["Yes", "No"], default="No"),
          F("Automatic reply message", "reply", False),
          F("Remove them from every group", "groups", choices=["Yes", "No"], default="No"),
@@ -180,11 +183,20 @@ TASKS = {
   T("Get group info", "Shows the details of one group, found by its name.",
     "entra group get --displayName {name} --output text",
     [F("Group display name", "name")]),
+  # v0.16 (11-02-2026, live): a microsoft365 group without --visibility is
+  # refused ("Option 'visibility' must be specified if the option 'type' is
+  # set to microsoft365") although the CLI docs say it defaults to Public.
   T("Create group",
-    "Creates a Microsoft 365 or security group.",
-    "entra group add --displayName {name} --type {type} [--mailNickname {nick}] [--description {desc}]",
+    "Creates a Microsoft 365 or security group. A Microsoft 365 group needs 'Who can see "
+    "and join it': Private (only people added), Public (anyone in the organization can "
+    "join) or HiddenMembership (members are not shown to others). Leave it blank for a "
+    "security group.",
+    "entra group add --displayName {name} --type {type} [--visibility {vis}] "
+    "[--mailNickname {nick}] [--description {desc}]",
     [F("Group display name", "name"),
      F("Type", "type", choices=["microsoft365", "security"]),
+     F("Who can see and join it (needed for Microsoft 365 groups)", "vis", False,
+       choices=["", "Private", "Public", "HiddenMembership"]),
      F("Mail nickname (M365 groups) e.g. sales (optional)", "nick", False),
      F("Description (optional)", "desc", False)]),
   T("List group members", "Lists the members of a group.",
@@ -271,9 +283,12 @@ TASKS = {
     "Microsoft 365 groups and Teams deleted in the last 30 days.",
     "entra m365group recyclebinitem list --output text", []),
   T("Restore a deleted Microsoft 365 group",
-    "Brings back a deleted group or Team (within 30 days), with its files and mail.",
-    "entra m365group recyclebinitem restore --displayName {deleted}",
-    [F("Display name of the deleted group", "deleted")]),
+    "Brings back a deleted group or Team (within 30 days), with its files and mail. Fill in "
+    "the name OR the id. If two deleted groups have that name, Microsoft lists both ids - "
+    "run it again with the id.",
+    "entra m365group recyclebinitem restore [--displayName {deleted}] [--id {id}]",
+    [F("Display name of the deleted group", "deleted", False),
+     F("OR its id (when two deleted groups have the same name)", "id", False)]),
   T("List all Teams", "Every Microsoft Teams team in the organization.",
     "teams team list --output text", []),
   T("Teams a user is in", "The Teams one person is a direct member of.",
@@ -301,7 +316,9 @@ TASKS = {
     "Makes a Team read-only (e.g. a finished class or project). It can be restored with "
     "'Unarchive a Team'.", "teams team archive --name {team}", [F("Team display name", "team")]),
   T("Archive a Team and make its files read-only",
-    "Archives the Team AND makes its SharePoint files read-only for members.",
+    "Archives the Team AND makes its SharePoint files read-only for members. Needs the "
+    "Team's SharePoint site: if Microsoft answers BadRequest ('... the team's site url is "
+    "not available'), the site is not ready yet - try again later, or use 'Archive a Team'.",
     "teams team archive --name {team} --shouldSetSpoSiteReadOnlyForMembers",
     [F("Team display name", "team")]),
   T("Unarchive a Team", "Makes an archived Team active again.",
@@ -389,6 +406,11 @@ TASKS = {
     "entra app permission list --appName {app} --type {ptype} --output text",
     [F("App registration display name", "app"),
      F("Which permissions", "ptype", choices=["all", "application", "delegated"], default="all")]),
+  # v0.16 (11-02-2026): run live (read-only); none in this tenant.
+  T("AI agent identities (Entra Agent ID)",
+    "The AI agents registered in Microsoft Entra ID with their own identity (Entra Agent "
+    "ID): name and id. Blank means none.",
+    "entra agent list --output text", []),
   T("Group settings for the organization",
     "The organization-wide settings for Microsoft 365 groups (for example who may create "
     "groups, guest access, naming rules), if any were set. An empty result means the "
@@ -422,31 +444,41 @@ TASKS = {
     [F("To (addresses, comma-separated)", "to"), F("Subject", "subject"), F("Message", "body"),
      F("Cc (optional)", "cc", False)],
     destructive=True),                     # a sent email cannot be taken back: confirm first
-  T("A user's mailbox settings", "Automatic replies, time zone, language and working hours.",
+  T("A user's mailbox settings",
+    "Automatic replies, time zone, language and working hours. Another person's settings "
+    "can be read only when the CLI is signed in app-only (a certificate or client secret) - "
+    "signed in as yourself, you see only your own.",
     "outlook mailbox settings get --userName {email} --output text", [F("User (UPN)", "email")]),
   # v0.12 (10-27-2026): checked against 'm365 outlook ... --help full' on
   # CLI v11.11 (event list uses the default calendar when none is named;
   # autoReplyStatus disabled|alwaysEnabled|scheduled; autoReplyExternal-
   # Audience none|contactsOnly|all; date-times like 2025-01-06T11:00:00
   # with a time zone name).
-  T("A user's calendars", "Every calendar in one user's mailbox (name, color, default).",
+  T("A user's calendars",
+    "Every calendar in one user's mailbox (name, color, default). Signed in as yourself, "
+    "you see another person's calendars only if they shared them with you (otherwise "
+    "'Access is denied') - or when the CLI is signed in app-only.",
     "outlook calendar list --userName {email} --output text", [F("User (UPN)", "email")]),
   T("A user's calendar events",
-    "Events in one user's default calendar. Give a date range (YYYY-MM-DD) to see only those days.",
+    "Events in one user's default calendar. Give a date range (YYYY-MM-DD) to see only those "
+    "days. Signed in as yourself, you see another person's events only if they shared their "
+    "calendar with you (otherwise 'Access is denied') - or when the CLI is signed in app-only.",
     "outlook event list --userName {email} [--startDateTime {start}] [--endDateTime {end}] "
     "--properties \"subject,start,end,organizer,isCancelled\" --output text",
     [F("User (UPN)", "email"), F("From date (optional, YYYY-MM-DD)", "start", False),
      F("To date (optional, YYYY-MM-DD)", "end", False)]),
   T("Messages in a user's mail folder",
     "The messages in one folder of a user's mailbox (e.g. inbox, sentitems, deleteditems, "
-    "archive). Needs Mail.Read for that mailbox.",
+    "archive). Signed in as yourself, you need Full Access to that mailbox - or the CLI "
+    "must be signed in app-only.",
     "outlook message list --userName {email} --folderName {folder} --output text",
     [F("User (UPN)", "email"),
      F("Folder", "folder", choices=["inbox", "sentitems", "drafts", "deleteditems", "archive",
                                     "junkemail"], default="inbox")]),
   T("Turn on automatic replies (until turned off)",
     "Out of office for a user, starting now, until someone turns it off. The internal "
-    "message goes to people in your organization; choose who outside it gets the external one.",
+    "message goes to people in your organization; choose who outside it gets the external one. "
+    "Works for ANOTHER person only when the CLI is signed in app-only (a certificate or client secret) - signed in as yourself, Microsoft lets you change only your own. Otherwise set it in the Exchange admin center on that person's mailbox.",
     "outlook mailbox settings set --userName {email} --autoReplyStatus alwaysEnabled "
     "--autoReplyInternalMessage {internal} --autoReplyExternalAudience {audience} "
     "[--autoReplyExternalMessage {external}]",
@@ -457,7 +489,8 @@ TASKS = {
     destructive=True),
   T("Turn on automatic replies for dates (scheduled)",
     "Out of office between two dates and times, in the time zone you name (a Windows time "
-    "zone name such as Central Standard Time, or an IANA name such as America/Chicago).",
+    "zone name such as Central Standard Time, or an IANA name such as America/Chicago). "
+    "Works for ANOTHER person only when the CLI is signed in app-only (a certificate or client secret) - signed in as yourself, Microsoft lets you change only your own. Otherwise set it in the Exchange admin center on that person's mailbox.",
     "outlook mailbox settings set --userName {email} --autoReplyStatus scheduled "
     "--autoReplyStartDateTime {start} --autoReplyStartTimeZone {tz} "
     "--autoReplyEndDateTime {end} --autoReplyEndTimeZone {tz} "
@@ -472,7 +505,7 @@ TASKS = {
        choices=["none", "contactsOnly", "all"], default="none"),
      F("Message to people outside (optional)", "external", False)],
     destructive=True),
-  T("Turn off automatic replies", "Stops a user's out-of-office replies.",
+  T("Turn off automatic replies", "Stops a user's out-of-office replies. " + "Works for ANOTHER person only when the CLI is signed in app-only (a certificate or client secret) - signed in as yourself, Microsoft lets you change only your own. Otherwise set it in the Exchange admin center on that person's mailbox.",
     "outlook mailbox settings set --userName {email} --autoReplyStatus disabled",
     [F("User (UPN)", "email")], destructive=True),
   T("Meeting rooms", "Every room mailbox.", "outlook room list --output text", []),
@@ -487,6 +520,12 @@ TASKS = {
   T("Tasks in a plan", "Every task in one plan.",
     "planner task list --planTitle {plan} --ownerGroupName {team} --output text",
     [F("Plan title", "plan"), F("Team / group display name", "team")]),
+  # v0.16 (11-02-2026): run live (read-only).
+  T("Planner settings for the organization",
+    "The organization-wide Planner settings: whether Planner is allowed, calendar "
+    "sharing, Copilot in Planner, mobile push notifications, and the rest. Changed with "
+    "Planner's own admin tools (the CLI's 'planner tenant settings set').",
+    "planner tenant settings list --output text", []),
  ],
  "Reports (usage)": [
   # v0.7 (10-23-2026): Microsoft 365 usage reports. Options checked against
@@ -580,9 +619,18 @@ TASKS = {
     "entra administrativeunit member list --administrativeUnitName {au} [--type {type}] --output text",
     [F("Administrative unit name", "au"),
      F("Only this kind (blank = all)", "type", False, choices=["", "user", "group", "device"])]),
-  T("Add a user to an administrative unit", "Puts a user under an administrative unit.",
+  T("Add a user to an administrative unit",
+    "Puts a user under an administrative unit. The member list can take a short while "
+    "(live: about 15 seconds) to show the change.",
     "entra administrativeunit member add --administrativeUnitName {au} --userName {email}",
     [F("Administrative unit name", "au"), F("User (UPN)", "email")]),
+  # v0.16 (11-02-2026): the way back out - there was only 'Add'.
+  T("Remove a user from an administrative unit (DESTRUCTIVE)",
+    "Takes a user out of an administrative unit. The account itself is not changed; admins "
+    "scoped to that unit can no longer manage it. The member list can take a short while "
+    "(live: about 15 seconds) to show the change.",
+    "entra administrativeunit member remove --administrativeUnitName {au} --userName {email} --force",
+    [F("Administrative unit name", "au"), F("User (UPN)", "email")], destructive=True),
  ],
  "SharePoint": [
   T("List sites", "Lists SharePoint sites in the tenant.",
@@ -629,11 +677,13 @@ TASKS = {
   T("Remove a site collection admin (DESTRUCTIVE)", "Takes a user's full control of a site away.",
     "spo site admin remove --siteUrl {url} --userName {email} --asAdmin --force",
     [F("Site URL", "url"), F("User (UPN)", "email")], destructive=True),
+  # v0.16 (11-02-2026, live): SharePoint Online refuses NoAdditions ("LockState
+  # is invalid. Valid values Unlock, ReadOnly, and NoAccess.") although the CLI
+  # docs list it - removed.
   T("Lock a site or make it read-only",
-    "NoAdditions = no new content; ReadOnly = nothing can change; NoAccess = nobody can open "
-    "it; Unlock = back to normal.",
+    "ReadOnly = nothing can change; NoAccess = nobody can open it; Unlock = back to normal.",
     "spo site set --url {url} --lockState {lock}",
-    [F("Site URL", "url"), F("Lock state", "lock", choices=["ReadOnly", "NoAdditions", "NoAccess", "Unlock"])],
+    [F("Site URL", "url"), F("Lock state", "lock", choices=["ReadOnly", "NoAccess", "Unlock"])],
     destructive=True),
   T("Change who a site can be shared with",
     "Disabled = only people in the organization; the others allow guests (new or existing).",
@@ -712,6 +762,16 @@ TASKS = {
     "The organization's hub sites (sites that join other sites together). An empty "
     "result means there are none.",
     "spo hubsite list --output text", []),
+  # v0.16 (11-02-2026): run live (read-only); none set here.
+  T("Home sites",
+    "The organization's SharePoint home sites (the landing sites people see first, also "
+    "used by Viva Connections). Blank means none.",
+    "spo homesite list --output text", []),
+  T("Organization news sites",
+    "Sites marked as official news sources for the organization - their news is "
+    "highlighted everywhere. Blank means none. You need to be a SharePoint or Global "
+    "administrator.",
+    "spo orgnewssite list --output text", []),
   # ---- v0.15: more read-only SharePoint (checked live 10-30-2026, CLI v11.11).
   # 'spo user list', 'spo roledefinition list' and 'spo site versionpolicy
   # get' answer "Attempted to perform an unauthorized operation" on a site
@@ -769,6 +829,14 @@ TASKS = {
     "spo navigation node list --webUrl {url} --location {location} --output text",
     [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
      F("Which menu", "location", default="QuickLaunch", choices=["QuickLaunch", "TopNavigationBar"])]),
+  # v0.16 (11-02-2026): run live (read-only) on two sites.
+  T("Content types on a site",
+    "The content types a site's lists and libraries can use (Document, Item, and any your "
+    "organization added), with whether each is hidden, read-only or sealed. Choose a "
+    "group to see only that group, e.g. Document Content Types.",
+    "spo contenttype list --webUrl {url} [--category {category}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Only this group (optional) e.g. Document Content Types", "category", False)]),
   T("Items in a list",
     "Every item in one list or library on a site (the list's name as 'Lists and "
     "libraries on a site' shows it). Shows the ID and title; name other columns to see "
@@ -787,6 +855,32 @@ TASKS = {
     "the permission is for.",
     "spo serviceprincipal grant list "
     "--query \"[].{Scope:scope,ResourceId:resourceId,Id:id}\" --output text", []),
+  # v0.16 (11-02-2026): run live (read-only); all three were empty here.
+  T("Apps in the SharePoint app catalog",
+    "The SharePoint Framework (SPFx) apps uploaded to the organization's app catalog: "
+    "title, id, whether it is deployed and its version. Blank means none (or there is no "
+    "app catalog).",
+    "spo app list --output text", []),
+  T("Extensions added to every site",
+    "SharePoint extensions installed for the whole organization (tenant-wide), which run "
+    "on every site they are set for - worth knowing about, as they can change what "
+    "people see. Blank means none.",
+    "spo tenant applicationcustomizer list --output text", []),
+  T("Apps given access to a site",
+    "Apps given their own access to one site (the Sites.Selected way of granting an app "
+    "a single site instead of all of them): the app's name and id and its access (read, "
+    "write, manage, fullcontrol). Blank means none.",
+    "spo site apppermission list --siteUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("List buttons added for everyone (tenant-wide command sets)",
+    "Command sets installed for the whole organization: extra buttons that show on the "
+    "toolbar of the lists and libraries they are set for. Blank means none.",
+    "spo tenant commandset list --output text", []),
+  T("Sites with their own app catalog",
+    "Sites that have their own (site collection) app catalog, where that site's owners "
+    "can add SharePoint Framework apps without the organization's app catalog. Blank "
+    "means none.",
+    "spo site appcatalog list --output text", []),
   T("API permission requests waiting for approval",
     "API permissions that SharePoint Framework (SPFx) solutions have asked for and that "
     "no admin has approved or rejected yet. An empty result means nothing is waiting.",
@@ -900,6 +994,110 @@ TASKS = {
          F("Afterwards", "access", choices=[TRANSFER_ACCESS_REMOVE, TRANSFER_ACCESS_KEEP])],
     destructive=True, workflow="move_to_site"),
  ],
+ # ---- v0.16 (11-02-2026): Power Automate / Power Apps, read-only --------------
+ "Power Platform": [
+  T("Power Platform environments",
+    "Lists the Power Platform environments (where Power Automate flows and Power Apps "
+    "live): name, whether it is the default one, type and region. The Name column is "
+    "what other Power Platform commands need. You need to be a Power Platform or Global "
+    "administrator.",
+    "flow environment list --query \"[].{Environment:properties.displayName,"
+    "Default:properties.isDefault,Type:properties.environmentSku,Region:location,"
+    "Name:name}\" --output text", []),
+  T("Power Automate flows and Power Apps review",
+    "Every flow and every app in every environment, read as an administrator: who made "
+    "it, whether it is on, when it last changed and - unless you choose the faster list - "
+    "each flow's trigger and connectors. Points out flows and apps made by a guest or by "
+    "an account that was deleted, ones that can send data outside Microsoft 365 (Gmail, "
+    "Google Drive, Dropbox, FTP...), flows that call web addresses or start when someone "
+    "calls theirs, and flows Microsoft suspended. Changes nothing; a CSV is saved in the "
+    "Records folder. You need to be a Power Platform or Global administrator.",
+    "", [F("How much to read", "details", choices=[POWER_DETAILS_FULL, POWER_DETAILS_FAST])],
+    workflow="power_platform"),
+  # v0.16 (11-02-2026): run live (read-only). The flow / app id is the id
+  # column of the review's power-platform.csv.
+  T("Owners of a flow",
+    "Who owns one Power Automate flow (and can change it). Id is the person's or "
+    "group's Entra object id; Type says which. "
+    "The CLI (v11.11) refuses some real flow ids with 'flowName: Invalid UUID' (live: 2 "
+    "of 6) - look those up in the Power Platform admin center instead. "
+    "You need to be a Power Platform or Global administrator.",
+    "flow owner list --environmentName {env} --flowName {flow} --asAdmin --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env"),
+     F("Flow id (the id column of the flows review's CSV)", "flow")]),
+  T("Run history of a flow",
+    "When one Power Automate flow ran and whether each run worked. Blank means it has "
+    "not run (or not in the time Microsoft keeps run history). "
+    "The CLI (v11.11) refuses some real flow ids with 'flowName: Invalid UUID' (live: 2 "
+    "of 6) - look those up in the Power Platform admin center instead. "
+    "You need to be a Power Platform or Global administrator.",
+    "flow run list --environmentName {env} --flowName {flow} [--status {status}] --asAdmin "
+    "--output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env"),
+     F("Flow id (the id column of the flows review's CSV)", "flow"),
+     F("Only runs that (blank = all)", "status", False,
+       choices=["", "Failed", "Succeeded", "Running", "Cancelled"])]),
+  T("Deleted flows (can be restored for 21 days)",
+    "Power Automate flows deleted in the last 21 days, which can still be restored. "
+    "Flows that are part of a solution are not listed. Blank means none. You need to be "
+    "a Power Platform or Global administrator.",
+    "flow recyclebinitem list --environmentName {env} --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  T("Who can use a Power App",
+    "The people and groups who own, can edit or can run one Power App. Owner = the "
+    "owner, CanEdit = co-owners, CanView = can run it. PrincipalId is their Entra object "
+    "id. You need to be a Power Platform or Global administrator.",
+    "pa app permission list --appName {app} --environmentName {env} [--roleName {role}] "
+    "--asAdmin --output text",
+    [F("App id (the id column of the flows and apps review's CSV)", "app"),
+     F("Environment name (the Name column of 'Power Platform environments')", "env"),
+     F("Only this kind (blank = all)", "role", False, choices=["", "Owner", "CanEdit", "CanView"])]),
+  # v0.16 (11-02-2026): organization-wide reads, run live. The settings
+  # query turns the API's 'disable...' names into plain ones (text output
+  # sorts them A-Z).
+  T("Power Platform tenant settings",
+    "The organization-wide Power Platform settings worth checking: whether only admins "
+    "may create environments (production, trial, developer) and portals, whether apps "
+    "may be shared with everyone, whether guests may make apps, whether Copilot is off "
+    "in Power Apps / Power Automate, and the weekly admin digest. 'true' / 'false' answer "
+    "the name on the left. Changed in the Power Platform admin center. You need to be a "
+    "Power Platform or Global administrator.",
+    "pp tenant settings list --query \""
+    "{OnlyAdminsCreateEnvironments:disableEnvironmentCreationByNonAdminUsers,"
+    "OnlyAdminsCreateTrialEnvironments:disableTrialEnvironmentCreationByNonAdminUsers,"
+    "OnlyAdminsCreateDeveloperEnvironments:powerPlatform.governance.disableDeveloperEnvironmentCreationByNonAdminUsers,"
+    "OnlyAdminsCreatePortals:disablePortalsCreationByNonAdminUsers,"
+    "AppsCannotBeSharedWithEveryone:powerPlatform.powerApps.disableShareWithEveryone,"
+    "GuestsCanMakeApps:powerPlatform.powerApps.enableGuestsToMake,"
+    "CopilotInPowerAppsOff:powerPlatform.powerApps.disableCopilot,"
+    "CopilotInPowerAutomateOff:powerPlatform.powerAutomate.disableCopilot,"
+    "WeeklyAdminDigestOff:powerPlatform.governance.disableAdminDigest}"
+    "\" --output text", []),
+  T("Copilot Studio agents in an environment",
+    "The Copilot Studio agents (bots) in one environment, read as an administrator: "
+    "name, when each was made, published and last changed. Blank means none. You need "
+    "to be a Power Platform or Global administrator.",
+    "pp copilot list --environmentName {env} --asAdmin --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  T("On-premises data gateways",
+    "The on-premises data gateways that let Power Platform and Power BI reach servers "
+    "inside your network - only the ones YOU are a gateway admin of (the CLI cannot list "
+    "the others; the Power Platform admin center shows all of them to a Global "
+    "administrator). Blank means none of yours.",
+    "pp gateway list --output text", []),
+  T("Custom connectors in an environment",
+    "Custom connectors made in one environment (connections to outside services that "
+    "someone built themselves) - only the ones YOU can use (the CLI asks as you, not as "
+    "an administrator, so even a Global administrator sees only their own). Blank means "
+    "none of those.",
+    "pa connector list --environmentName {env} --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  T("Apps allowed to manage Power Platform",
+    "App registrations given administrator access to Power Platform (management apps): "
+    "each one's application id, which 'App registrations made in the organization' can "
+    "name. Blank means none. You need to be a Power Platform or Global administrator.",
+    "pp managementapp list --output text", []),
+ ],
  "Diagnostics": [
   T("Login status", "Shows whether the CLI is signed in and to which tenant.",
     "status", []),
@@ -987,6 +1185,11 @@ WORKFLOW_PLANS = {
                      "and its owner, member and guest counts -> show them in plain words "
                      "with notes -> save team-settings.csv in the Records folder. Nothing "
                      "is changed. Click Run to start.",
+    "power_platform": "Workflow (read-only): list the Power Platform environments -> list "
+                      "every flow and app as an administrator -> look up who made each one "
+                      "-> read each flow's trigger and connectors (unless skipped) -> list "
+                      "them with notes -> save power-platform.csv in the Records folder. "
+                      "Nothing is changed. Click Run to start.",
     "shared_links": "Workflow (read-only): list the files in the folder (and subfolders) -> "
                     "read each file's sharing links -> list them with notes -> save "
                     "shared-links.csv in the Records folder (no link addresses). Nothing is "
@@ -1204,9 +1407,18 @@ def script_text(argv, kind, task_name, app_version, date_text):
 # must not be stored there. The screen still shows the command as typed.
 _SECRET_RE = re.compile(r"(?i)(--(?:new|current)?password(?:\s+|=))(\"[^\"]*\"|'[^']*'|\S+)")
 
+# v0.16 (11-02-2026): access tokens too. 'm365 ... --debug' (what the
+# Troubleshooting advice suggests) prints every request's headers, including
+# 'authorization: Bearer <token>' - a live sign-in for about an hour. Mask
+# 'Bearer <token>' and any bare JWT (three base64url parts, starts 'eyJ').
+_BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{16,}")
+_JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*")
+
 def redact_secrets(text):
     try:
-        return _SECRET_RE.sub(lambda m_: m_.group(1) + "********", str(text))
+        text = _SECRET_RE.sub(lambda m_: m_.group(1) + "********", str(text))
+        text = _BEARER_RE.sub(lambda m_: m_.group(1) + "********", text)
+        return _JWT_RE.sub("********", text)
     except Exception:
         return text                       # never let masking break logging
 

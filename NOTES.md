@@ -6,12 +6,13 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 172 tasks in 13 sections (counted 10-30-2026, v0.15), plus a Custom-command
-  mode and nine guided workflows: staff hand-off, remove all guest users,
+- 194 tasks in 14 sections (counted 11-02-2026, v0.16), plus a Custom-command
+  mode and ten guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
   user, move a user's OneDrive files to a Team or SharePoint site, who holds
-  admin roles, files shared by link, Conditional Access review and Team
-  settings review (the last four read-only).
+  admin roles, files shared by link, Conditional Access review, Team
+  settings review and the Power Automate flows and Power Apps review (the
+  last five read-only).
 - Search, Favorites and Recent, Pick... lists, Save results to CSV / JSON,
   Run for each CSV row, a Connection list (v0.11), Settings > Set up the
   CLI and Settings > Dark mode (v0.12).
@@ -37,9 +38,19 @@
   hub sites; v0.15 a site's owners / members / visitors, people added to a
   site, permission levels, version history settings, earlier versions of a
   file, folder sharing links, pages, navigation links, list items, the
-  SharePoint API permissions and a Team settings review. Still open
-  (read-only candidates the gap finder lists): content types, page
-  sections / web parts.
+  SharePoint API permissions and a Team settings review; v0.16 content
+  types. Still open: page sections / web parts (spo page section / control
+  list answered [] on a new team site's Home.aspx and a classic page is
+  refused - add when there is a real modern page to check the columns).
+- Power Platform: v0.16 environments + a read-only flows and apps review.
+  v0.16 also: a flow's owners, run history, deleted flows, Power App
+  permissions. Still open: turn a flow off / on as an admin (flow disable /
+  enable --asAdmin) - needs a throwaway flow to live-test. CLI 11.11 + 12
+  beta: flow owner / run / export / remove / recyclebinitem restore check
+  --flowName with zod z.uuid() (RFC version digit 1-8) and refuse real
+  flow ids like xxxxxxxx-xxxx-b028-... ('Invalid UUID'); flow get does not.
+  Already reported upstream: pnp/cli-microsoft365#7678 (opened 10-31-2026,
+  open - replace z.uuid() with z.guid()); drop the task notes when fixed.
 - Live tests of the tasks that change things and of the guided workflows,
   on throwaway accounts.
 
@@ -62,6 +73,79 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-02-2026 (v0.16): second live run of CHANGE tasks (throwaway new user
+  made and PERMANENTLY deleted; throwaway Teams 'M365GUI Live Teams Test
+  1102' and 'M365GUI Live Teamify Test 1102' made and deleted - they sit in
+  the M365 group recycle bin for 30 days; one more from a stopped first
+  run is there too). OK: user create / block / unblock /
+  session revoke / remove / restore / recyclebinitem remove; team add
+  (provisioning took ~7 min), channel add / remove, archive / unarchive,
+  team remove, m365group teamify. FIXED: entra group add --type
+  microsoft365 needs --visibility (CLI refine; docs wrong) -> 'vis' box;
+  m365group recyclebinitem restore by name refused for two deleted groups
+  -> optional --id. FOUND: outlook mailbox settings get/set for another
+  user need APP-ONLY auth (CLI check), outlook calendar/event list for
+  another user -> 'Access is denied', message list needs Full Access ->
+  texts + staff hand-off hint. teams team archive
+  --shouldSetSpoSiteReadOnlyForMembers -> BadRequest 'team's site url is
+  not available' (new Team, SharePoint site not ready) -> text. SECURITY:
+  'm365 ... --debug' prints 'authorization: Bearer <token>' and more JWTs
+  (6 in one request) - redact_secrets now masks Bearer tokens and bare JWTs
+  (checked against real --debug output: 6 -> 0). GAM's own debug output
+  already masks its tokens ('Bearer *****') - nothing needed in GAMGUI.
+  Not run: send email, invite guest, empty the user recycle bin (every
+  deleted user), give an admin role, connection tasks (the release uses
+  the sign-in). Tests: test_v016_live_changes.py, test_v016_redact_tokens.py.
+  SharePoint (throwaway /sites/m365gui-live-* sites, left in Deleted sites
+  for 93 days): comm + team site add, site admin add / remove, group
+  member add, lockState ReadOnly / Unlock, sharingCapability Disabled /
+  ExistingExternalUserSharingOnly (read back 0 / 3), recyclebinitem restore
+  --allPrimary, site remove, tenant recyclebinitem restore - all OK. FIXED:
+  lockState NoAdditions refused by SharePoint Online (CLI docs list it) ->
+  removed. A new team site's 'spo site remove' said 'Site not found' for
+  ~30 s, then worked. Note for tests: CLI 11 'spo file remove' without
+  --recycle deletes PERMANENTLY (12.0 flips it to --permanent).
+  + 'Remove a user from an administrative unit' (entra administrativeunit
+  member remove --administrativeUnitName --userName --force). Live on a
+  throwaway unit made and deleted with 'entra administrativeunit add /
+  remove': add / member list / remove OK; the member list lags ~15 s both
+  ways (first check after add: not listed; after remove: still listed).
+  Task count 175.
+  + 5 read-only tasks run live: Owners of a flow (flow owner list
+  --asAdmin -> roleName/id/type), Run history of a flow (flow run list
+  [--status]; no runs in this tenant -> blank), Deleted flows (flow
+  recyclebinitem list -> blank), Who can use a Power App (pa app permission
+  list; no apps here - docs only), Content types on a site (spo contenttype
+  list [--category], OK on 2 sites). 2 of 6 real flow ids -> 'flowName:
+  Invalid UUID' (zod strict). Task count 180.
+  + 7 organization-wide read-only tasks run live: spo app list, spo tenant
+  applicationcustomizer list, spo site apppermission list (all empty
+  here), pp tenant settings list with a --query of plain names (the
+  output is sorted A-Z), pp
+  copilot list --asAdmin (1 agent), pp gateway list, entra agent list
+  (empty). Task count 187.
+  + 7 more read-only tasks run live: planner tenant settings list (OK),
+  spo tenant commandset list, spo site appcatalog list, spo homesite list,
+  spo orgnewssite list, pa connector list (NON-admin API - only the
+  caller's connectors), pp managementapp list (all empty here). Skipped:
+  purview sensitivitylabel policysettings list (delegated = the signed-in
+  person's own policy only). Task count 194.
+- 11-02-2026 (v0.16): new section Power Platform. 'Power Platform
+  environments' (flow environment list --query ... --output text) and the
+  guided, read-only 'Power Automate flows and Power Apps review'
+  (m365_workflows.power_platform): flow environment list -> per
+  environment flow list --asAdmin, flow get --asAdmin (trigger / actions /
+  connectionReferences; skipped with 'List the flows only'), pa app list
+  --asAdmin -> each creator / owner looked up ONCE as Graph
+  directoryObjects/<id> (a person, an app = servicePrincipal; 404 =
+  deleted; userType DataverseSystemUser = system account, not looked up).
+  Notes: guest, deleted creator (still ON), outside connectors, HTTP
+  actions, Request / Request-Http trigger, flowSuspensionReason. Live,
+  read-only: 1 environment, 6 flows (Dynamics / Dataverse system flows),
+  0 apps, nothing pointed out, about 60 s. The app fields (owner,
+  sharedUsersCount, connectionReferences) follow Microsoft's admin API -
+  the live tenant had no apps to check them against. Tests:
+  test_v016_power_platform.py, test_v016_web_power_platform.py.
 - 11-02-2026 (v0.15): usage location + Assign / Remove license(s) live OK
   (free Power BI SKU added and removed, A1 kept). The test user's OneDrive
   was NEVER created (3 Request-SPOPersonalSite runs, 10-30 to 11-02; a 90
@@ -152,6 +236,7 @@ before adding it.
   only fail|rename; a OneDrive is on the -my host, so the target is an
   ABSOLUTE URL. The move itself still needs its live test on throwaway
   accounts. Tests: tests\test_v015_move_to_site.py.
+- 11-02-2026: v0.15 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-30-2026: v0.14 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-29-2026: v0.13 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 10-28-2026: v0.12 published by the 5 PM daily release (Release-M365GUI.ps1).

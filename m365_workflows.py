@@ -2,7 +2,7 @@
 # Script:   m365_workflows.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  10-23-2026 (moved out of M365GUI.py, v0.6)
-# Modified: 10-30-2026 (v0.15: Settings of a Team - read-only)
+# Modified: 11-02-2026 (v0.16: Power Automate flows and Power Apps review - read-only)
 #
 # Purpose:
 #   M365GUI's guided workflows - tasks that run several m365 commands in a
@@ -18,7 +18,7 @@ import os
 import urllib.parse
 
 from m365_catalog import (SHARE_ANYONE, TRANSFER_ACCESS_KEEP, TRANSFER_ACCESS_REMOVE,
-                          clean_identifier)
+                          POWER_DETAILS_FULL, clean_identifier)
 
 # =============================================================================
 # SECTION: OneDrive transfer - copy one user's OneDrive files to another user
@@ -647,10 +647,17 @@ def staff_handoff(run, out, confirm, cancelled, values, records_base):
         steps.note("Copy OneDrive files", "OK" if copy["ok"] else "FAILED",
                    copy.get("error") or "%d copied, %d failed" % (copy["copied"], copy["failed"]))
     if pick["autoreply"] and not cancelled():
-        steps.do("Set an automatic reply",
-                 ["outlook", "mailbox", "settings", "set", "--userName", leaver,
-                  "--autoReplyStatus", "alwaysEnabled", "--autoReplyInternalMessage", reply,
-                  "--autoReplyExternalMessage", reply, "--autoReplyExternalAudience", "all"])
+        rc, text = steps.do("Set an automatic reply",
+                            ["outlook", "mailbox", "settings", "set", "--userName", leaver,
+                             "--autoReplyStatus", "alwaysEnabled", "--autoReplyInternalMessage",
+                             reply, "--autoReplyExternalMessage", reply,
+                             "--autoReplyExternalAudience", "all"])
+        if rc and "app-only" in (text or ""):
+            # Live 11-02-2026: signed in as yourself, the CLI cannot change
+            # another person's mailbox settings.
+            out("          Signed in as yourself, Microsoft lets you set only your own "
+                "automatic reply. Set it in the Exchange admin center on their mailbox "
+                "(the other steps are not affected).\n")
     # ---- 4. take access away -----------------------------------------------------
     if pick["groups"] and not cancelled():
         for g in groups:
@@ -1611,4 +1618,278 @@ def team_settings(run, out, cancelled, values, records_base):
     result["ok"] = not cancelled() and not failed
     out("\n===== DONE: %d Team(s), %d note(s). Saved: %s =====\n"
         % (done, len(notes), os.path.join(folder_out, "team-settings.csv")))
+    return result
+
+# =============================================================================
+# SECTION: Power Automate flows and Power Apps review (v0.16, read-only)
+#   Every Power Platform environment -> every flow and every app in it, read
+#   as an administrator ('flow list --asAdmin', 'pa app list --asAdmin'), who
+#   made each one and - unless skipped - each flow's trigger, actions and
+#   connectors ('flow get --asAdmin'). Run live, read-only, 11-02-2026: one
+#   environment, six flows, no apps. A flow's creator can be a person, an app
+#   (service principal) or a Dataverse system account that is not in the
+#   directory at all, so each creator is looked up as a directoryObject (the
+#   live run had an app and a system account; a 404 for a person's id means
+#   the account was deleted). Nothing is changed; power-platform.csv is saved
+#   in the Records folder.
+# =============================================================================
+
+# Connectors (by API name, without 'shared_') that can send data outside
+# Microsoft 365 - a flow or app that uses one is pointed out.
+POWER_OUTSIDE_CONNECTORS = {
+    "gmail": "Gmail", "googledrive": "Google Drive", "googlesheet": "Google Sheets",
+    "googlecalendar": "Google Calendar", "googletasks": "Google Tasks", "dropbox": "Dropbox",
+    "box": "Box", "onedrive": "OneDrive (personal)", "outlook": "Outlook.com (personal)",
+    "ftp": "FTP", "sftp": "SFTP", "sftpwithssh": "SFTP", "smtp": "SMTP", "slack": "Slack",
+    "twitter": "X (Twitter)", "webcontents": "HTTP with Microsoft Entra ID",
+}
+# Creator types that are not directory accounts (live: Dataverse system flows).
+POWER_SYSTEM_TYPES = {"DataverseSystemUser": "system account (Dataverse)"}
+# 'flow get' writes each trigger as type[-kind] (CLI flow-get.js); plain words.
+POWER_TRIGGERS = {
+    "Recurrence": "on a schedule",
+    "OpenApiConnectionWebhook": "when something happens in a connected service",
+    "OpenApiConnection": "checks a connected service now and then",
+    "ApiConnectionWebhook": "when something happens in a connected service",
+    "ApiConnection": "checks a connected service now and then",
+    "Request": "when someone calls its web address",
+    "Request-Http": "when someone calls its web address",
+    "Request-Button": "by hand (a button)",
+    "Request-PowerApp": "from a Power App",
+    "Request-PowerAppV2": "from a Power App",
+    "Request-VirtualAgent": "from a Copilot agent / chatbot",
+    "Request-Skills": "from a Copilot agent / chatbot",
+}
+
+def _power_trigger_text(trigger):
+    # 'Recurrence, Request-Button' -> 'on a schedule (Recurrence); by hand ...'
+    parts = [t.strip() for t in (trigger or "").split(",") if t.strip()]
+    return "; ".join("%s (%s)" % (POWER_TRIGGERS[t], t) if t in POWER_TRIGGERS else t
+                     for t in parts)
+
+def _power_connectors(refs):
+    # A flow's or app's connectionReferences -> [(api name, display name)].
+    items = refs.values() if isinstance(refs, dict) else (refs if isinstance(refs, list) else [])
+    found = []
+    for ref in items:
+        if not isinstance(ref, dict):
+            continue
+        api = (ref.get("apiName") or (ref.get("id") or "").rstrip("/").split("/")[-1]).lower()
+        if api.startswith("shared_"):
+            api = api[len("shared_"):]
+        pair = (api, ref.get("displayName") or api)
+        if api and pair not in found:
+            found.append(pair)
+    return found
+
+def _power_who(run, cache, account):
+    # A creator / owner -> (name shown, kind). kind is user, guest, app,
+    # system, deleted or unknown. Each id is looked up once.
+    acct = account if isinstance(account, dict) else {}
+    if acct.get("userType") in POWER_SYSTEM_TYPES:
+        return POWER_SYSTEM_TYPES[acct["userType"]], "system"
+    oid = acct.get("objectId") or acct.get("id") or ""
+    if not oid:
+        return "(not recorded)", "unknown"
+    if oid in cache:
+        return cache[oid]
+    rc, text = run(["request", "--url", GRAPH + "directoryObjects/" + oid, "--output", "json"])
+    one = parse_json(text) if rc == 0 else None
+    if isinstance(one, dict) and one.get("@odata.type"):
+        kind = one["@odata.type"].replace("#microsoft.graph.", "")
+        name = one.get("displayName") or oid
+        if kind == "user":
+            upn = one.get("userPrincipalName") or one.get("mail") or ""
+            got = (name + (" <%s>" % upn if upn else ""),
+                   "guest" if "#EXT#" in upn.upper() else "user")
+        elif kind == "servicePrincipal":
+            got = ("app: " + name, "app")
+        else:
+            got = ("%s (%s)" % (name, kind), kind)
+    elif "404" in (text or "") or "NotFound" in (text or ""):
+        got = ("(deleted or unknown account %s)" % oid, "deleted")
+    else:
+        got = ("(could not look up %s)" % oid, "unknown")
+    cache[oid] = got
+    return got
+
+def _power_notes(on, who_kind, connectors, trigger, actions, suspension):
+    # The plain-words notes for one flow or app (things worth a second look).
+    notes = []
+    if who_kind == "guest":
+        notes.append("made by a guest")
+    if who_kind == "deleted":
+        notes.append("the account that made it is deleted or unknown" +
+                     (" - and it is still ON" if on else ""))
+    outside = sorted({POWER_OUTSIDE_CONNECTORS[a] for a, _n in connectors
+                      if a in POWER_OUTSIDE_CONNECTORS})
+    if outside:
+        notes.append("can send data outside Microsoft 365: " + ", ".join(outside))
+    if any(t.strip() in ("Request", "Request-Http") for t in (trigger or "").split(",")):
+        notes.append("starts when someone calls its web address")
+    if any(a.strip().lower().startswith("http") for a in (actions or "").split(",")):
+        notes.append("calls web addresses directly (HTTP)")
+    if suspension and str(suspension) not in ("None", "none"):
+        notes.append("suspended by Microsoft (%s)" % suspension)
+    return notes
+
+def power_platform(run, out, cancelled, values, records_base):
+    result = {"ok": False, "error": "", "folder": "", "flows": 0, "apps": 0, "notes": 0}
+    details = (values.get("details") or POWER_DETAILS_FULL) == POWER_DETAILS_FULL
+
+    def stop(message):
+        result["error"] = message
+        out("\n" + message + "\n")
+        return result
+
+    def why(text):
+        return " ".join((text or "").split())[:200] or "no answer"
+
+    out("\n===== POWER AUTOMATE FLOWS AND POWER APPS REVIEW =====\n")
+    out("Listing the Power Platform environments...\n")
+    rc, text = run(["flow", "environment", "list", "--output", "json"])
+    envs = parse_json(text) if rc == 0 else None
+    if not isinstance(envs, list):
+        return stop("Could not list the Power Platform environments (you need to be a Power "
+                    "Platform or Global administrator): " + why(text))
+    envs = [e for e in envs if isinstance(e, dict) and e.get("name")]
+    out("%d environment(s).\n" % len(envs))
+
+    rows, notes, failed, cache = [], [], [], {}
+    for env in envs:
+        if cancelled():
+            break
+        props = env.get("properties") if isinstance(env.get("properties"), dict) else {}
+        label = props.get("displayName") or env["name"]
+        out("\n=== Environment: %s ===\n" % label)
+
+        # ---- flows -------------------------------------------------------------------
+        rc, text = run(["flow", "list", "--environmentName", env["name"], "--asAdmin",
+                        "--output", "json"])
+        flows = parse_json(text) if rc == 0 else None
+        if not isinstance(flows, list):
+            failed.append((label, "flows", why(text)))
+            out("  COULD NOT LIST THE FLOWS - %s\n" % why(text))
+            flows = []
+        flows = [f for f in flows if isinstance(f, dict) and f.get("name")]
+        out("  Flows: %d\n" % len(flows))
+        for flow in sorted(flows, key=lambda f: ((f.get("properties") or {}).get("displayName")
+                                                 or f["name"]).lower()):
+            if cancelled():
+                break
+            p = flow.get("properties") if isinstance(flow.get("properties"), dict) else {}
+            name = p.get("displayName") or flow["name"]
+            state = p.get("state") or ""
+            who, who_kind = _power_who(run, cache, p.get("creator"))
+            trigger, actions, connectors = "", "", []
+            if details:
+                rc, text = run(["flow", "get", "--name", flow["name"], "--environmentName",
+                                env["name"], "--asAdmin", "--output", "json"])
+                got = parse_json(text) if rc == 0 else None
+                if isinstance(got, dict):
+                    trigger = got.get("triggers") or ""
+                    actions = got.get("actions") or ""
+                    connectors = _power_connectors((got.get("properties") or {})
+                                                   .get("connectionReferences"))
+                else:
+                    failed.append((label, name, why(text)))
+                    out("    (could not read its details - %s)\n" % why(text))
+            these = _power_notes(state.lower() == "started", who_kind, connectors, trigger,
+                                 actions, p.get("flowSuspensionReason"))
+            result["flows"] += 1
+            out("\n  FLOW  %s  [%s]\n" % (name, "ON" if state.lower() == "started" else
+                                         (state or "unknown").lower()))
+            out("    Made by:        %s\n" % who)
+            out("    Last changed:   %s\n" % (p.get("lastModifiedTime") or "")[:10])
+            if details:
+                out("    Starts:         %s\n" % (_power_trigger_text(trigger) or "(none listed)"))
+                out("    Connectors:     %s\n" % (", ".join(n for _a, n in connectors) or "(none)"))
+            for n in these:
+                notes.append("%s / flow '%s': %s" % (label, name, n))
+            rows.append({"environment": label, "kind": "flow", "name": name, "id": flow["name"],
+                         "state": state, "made_by": who, "made_by_kind": who_kind,
+                         "created": p.get("createdTime") or "",
+                         "last_changed": p.get("lastModifiedTime") or "",
+                         "trigger": trigger, "connectors": "; ".join(n for _a, n in connectors),
+                         "notes": "; ".join(these)})
+
+        # ---- apps --------------------------------------------------------------------
+        if cancelled():
+            break
+        rc, text = run(["pa", "app", "list", "--environmentName", env["name"], "--asAdmin",
+                        "--output", "json"])
+        apps = parse_json(text) if rc == 0 else None
+        if not isinstance(apps, list):
+            failed.append((label, "apps", why(text)))
+            out("\n  COULD NOT LIST THE APPS - %s\n" % why(text))
+            apps = []
+        apps = [a for a in apps if isinstance(a, dict) and a.get("name")]
+        out("\n  Apps: %d\n" % len(apps))
+        for app in sorted(apps, key=lambda a: ((a.get("properties") or {}).get("displayName")
+                                               or a["name"]).lower()):
+            if cancelled():
+                break
+            p = app.get("properties") if isinstance(app.get("properties"), dict) else {}
+            name = p.get("displayName") or app["name"]
+            owner = p.get("owner") if isinstance(p.get("owner"), dict) else {}
+            if owner.get("displayName") and (owner.get("email") or owner.get("userPrincipalName")):
+                upn = owner.get("userPrincipalName") or owner.get("email")
+                who = "%s <%s>" % (owner["displayName"], upn)
+                who_kind = "guest" if "#EXT#" in upn.upper() else "user"
+            else:
+                who, who_kind = _power_who(run, cache, owner)
+            connectors = _power_connectors(p.get("connectionReferences"))
+            these = _power_notes(True, who_kind, connectors, "", "", None)
+            shared = p.get("sharedUsersCount")
+            result["apps"] += 1
+            out("\n  APP   %s  [%s]\n" % (name, p.get("appType") or "app"))
+            out("    Owner:          %s\n" % who)
+            out("    Last changed:   %s\n" % (p.get("lastModifiedTime") or "")[:10])
+            if shared is not None:
+                out("    Shared with:    %s people, %s group(s)\n"
+                    % (shared, p.get("sharedGroupsCount", 0)))
+            out("    Connectors:     %s\n" % (", ".join(n for _a, n in connectors) or "(none)"))
+            for n in these:
+                notes.append("%s / app '%s': %s" % (label, name, n))
+            rows.append({"environment": label, "kind": "app", "name": name, "id": app["name"],
+                         "state": p.get("appType") or "", "made_by": who,
+                         "made_by_kind": who_kind, "created": p.get("createdTime") or "",
+                         "last_changed": p.get("lastModifiedTime") or "", "trigger": "",
+                         "connectors": "; ".join(n for _a, n in connectors),
+                         "notes": "; ".join(these)})
+    result["notes"] = len(notes)
+    if cancelled():
+        out("\n[Stopped.]\n")
+
+    # ---- summary: the things worth a second look ----------------------------------
+    out("\n%d flow(s) and %d app(s) in %d environment(s).\n"
+        % (result["flows"], result["apps"], len(envs)))
+    if not details:
+        out("(Each flow's trigger and connectors were skipped, so flows that send data "
+            "outside Microsoft 365 or call web addresses are not pointed out.)\n")
+    if notes:
+        out("Worth a second look:\n")
+        for n in notes:
+            out("  - %s\n" % n)
+    elif rows:
+        out("Nothing to point out.\n")
+
+    # ---- the record ------------------------------------------------------------------
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    columns = ["environment", "kind", "name", "id", "state", "made_by", "made_by_kind",
+               "created", "last_changed", "trigger", "connectors", "notes"]
+    writer.writerow(columns)
+    for r in rows:
+        writer.writerow([r[c] for c in columns])
+    for env_label, what, reason in failed:
+        writer.writerow([env_label, "", what, "", "COULD NOT READ", "", "", "", "", "", "", reason])
+    folder_out = _record_dir(records_base, "PowerPlatform", "all-environments")
+    result["folder"] = folder_out
+    _save(folder_out, "power-platform.csv", buf.getvalue(), out)
+    result["ok"] = not cancelled() and not failed
+    out("\n===== DONE: %d flow(s), %d app(s), %d note(s). Saved: %s =====\n"
+        % (result["flows"], result["apps"], len(notes),
+           os.path.join(folder_out, "power-platform.csv")))
     return result

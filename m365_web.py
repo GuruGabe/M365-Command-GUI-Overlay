@@ -409,6 +409,9 @@ def api_workflow(data):
         elif name == "conditional_access":   # v0.14: read-only, asks nothing
             os.makedirs(records, exist_ok=True)
             wf.conditional_access(capture, job.out, job.cancelled, values, records)
+        elif name == "power_platform":       # v0.16: read-only, asks nothing
+            os.makedirs(records, exist_ok=True)
+            wf.power_platform(capture, job.out, job.cancelled, values, records)
         else:
             job.out("Unknown workflow.\n")
     return {"job": start_job(target).id}

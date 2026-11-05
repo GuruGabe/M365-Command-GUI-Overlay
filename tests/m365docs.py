@@ -50,7 +50,8 @@ def doc_page(root, words):
 def doc_options(text):
     # {--option: (required, description)} from a page's Options list:
     #   `-u, --webUrl <webUrl>` required    `--force` / `--type [type]` optional
-    section = text.split("## Options", 1)[-1].split("\n## ", 1)[0]
+    # Any case: 'administrativeunit member remove' has '## options' (11-02-2026).
+    section = re.split(r"(?im)^## options\s*$", text, maxsplit=1)[-1].split("\n## ", 1)[0]
     out = {}
     for m_ in re.finditer(r"`(?:-\w, )?(--[A-Za-z0-9]+)( <[^>]+>| \[[^\]]+\])?`\s*\n:([^\n]*)", section):
         out[m_.group(1)] = ((m_.group(2) or "").strip().startswith("<"), m_.group(3))

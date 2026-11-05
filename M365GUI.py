@@ -2,8 +2,8 @@
 # Script:   M365GUI.py
 # Author:   Gabriel Clifton (built with Claude)
 # Created:  08-07-2026
-# Modified: 10-29-2026
-# Version:  0.15
+# Modified: 11-02-2026
+# Version:  0.16
 #
 # Purpose:
 #   A graphical front-end for the CLI for Microsoft 365 (the "m365" command) -
@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.15"
+APP_VERSION = "0.16"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -294,7 +294,8 @@ from m365_workflows import (BAD_FOLDER_CHARS, parse_json, onedrive_paths,
                             default_transfer_folder, size_text, transfer_onedrive,
                             staff_handoff, compromised_response, COMPROMISED_NEXT_STEPS,
                             remove_all_guests, admin_roles, shared_links,
-                            conditional_access, move_to_site, team_settings)
+                            conditional_access, move_to_site, team_settings,
+                            power_platform)
 
 def random_password(length=16):
     # A new password for a compromised account: letters, digits and symbols
@@ -596,6 +597,9 @@ class M365Gui(tk.Tk):
                 elif name == "conditional_access":
                     conditional_access(self._capture, self.output_queue.put,
                                        lambda: self.workflow_cancel, values, RECORDS_DIR)
+                elif name == "power_platform":    # v0.16: read-only, asks nothing
+                    power_platform(self._capture, self.output_queue.put,
+                                   lambda: self.workflow_cancel, values, RECORDS_DIR)
                 else:
                     compromised_response(self._capture, self.output_queue.put, self._ask_yesno,
                                          lambda: self.workflow_cancel, values, RECORDS_DIR,
@@ -1156,7 +1160,8 @@ class M365Gui(tk.Tk):
                                                                         "admin_roles", "shared_links",
                                                                         "conditional_access",
                                                                         "move_to_site",
-                                                                        "team_settings"):
+                                                                        "team_settings",
+                                                                        "power_platform"):
             self._run_record_workflow(self.current_task["workflow"]); return
 
         got = self._preview_argv()

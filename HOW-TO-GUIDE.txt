@@ -66,6 +66,9 @@
       Teams / M365 Groups - add people to Teams
       SharePoint       - list sites, add people to site groups
       Security         - sign someone out everywhere, sign-in activity
+      Power Platform   - Power Automate flows and Power Apps (read-only review,
+                         owners, run history, deleted flows, tenant
+                         settings, Copilot Studio agents, gateways)
       Diagnostics      - health checks
       Custom command   - for advanced users
 
