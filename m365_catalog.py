@@ -705,7 +705,8 @@ TASKS = {
     "People outside the organization who were given access - for every site, or one. "
     "If nothing at all is shown, the CLI may be hiding the list (a CLI v11.11 problem: it "
     "shows the people only when SharePoint also sends a count above 0 - fixed in CLI "
-    "12.0) - use 'List guest users' in Users to see every guest account.",
+    "12.0; update the CLI in Settings > Set up the CLI) - or use 'List guest users' in "
+    "Users to see every guest account.",
     "spo externaluser list [--siteUrl {url}] --output text",
     [F("Only this site (optional)", "url", False)]),
   T("SharePoint organization settings", "The SharePoint / OneDrive settings for the whole organization.",
@@ -1019,8 +1020,8 @@ TASKS = {
   T("Owners of a flow",
     "Who owns one Power Automate flow (and can change it). Id is the person's or "
     "group's Entra object id; Type says which. "
-    "The CLI (v11.11) refuses some real flow ids with 'flowName: Invalid UUID' (live: 2 "
-    "of 6) - look those up in the Power Platform admin center instead. "
+    "The CLI (v11.11 and v12.0) refuses some real flow ids with 'flowName: Invalid UUID' "
+    "(live: 2 of 6) - look those up in the Power Platform admin center instead. "
     "You need to be a Power Platform or Global administrator.",
     "flow owner list --environmentName {env} --flowName {flow} --asAdmin --output text",
     [F("Environment name (the Name column of 'Power Platform environments')", "env"),
@@ -1028,8 +1029,8 @@ TASKS = {
   T("Run history of a flow",
     "When one Power Automate flow ran and whether each run worked. Blank means it has "
     "not run (or not in the time Microsoft keeps run history). "
-    "The CLI (v11.11) refuses some real flow ids with 'flowName: Invalid UUID' (live: 2 "
-    "of 6) - look those up in the Power Platform admin center instead. "
+    "The CLI (v11.11 and v12.0) refuses some real flow ids with 'flowName: Invalid UUID' "
+    "(live: 2 of 6) - look those up in the Power Platform admin center instead. "
     "You need to be a Power Platform or Global administrator.",
     "flow run list --environmentName {env} --flowName {flow} [--status {status}] --asAdmin "
     "--output text",

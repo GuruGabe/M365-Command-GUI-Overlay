@@ -89,13 +89,30 @@ def signed_in(account_line):
     return bool(who) and not who.startswith(("(", "nobody"))
 
 
+# v0.17 (11-06-2026): a Node.js version manager's stand-in node.exe with no
+# version chosen in it. Seen on Windows with nvm: 'node --version' exits 1,
+# prints nothing on stdout and this on stderr, and the CLI cannot start
+# either (its m365.cmd runs that same node). 0.16 showed "Installed:
+# Node.js ?" and "Signed in as: (unknown - ...)" and offered no help.
+NVM_NO_VERSION = "No active Node.js version is configured"
+NODE_NOT_READY = ("nvm (a Node.js version manager) is installed, but no Node.js version "
+                  "is chosen in it, so the CLI cannot start. In a terminal run: nvm install "
+                  "<version>, then nvm use <version> (nvm's own advice) - or install Node.js.")
+
+
+def node_not_ready(output):
+    # True for that nvm answer - from node itself, or from m365 (which runs it).
+    return NVM_NO_VERSION in (output or "")
+
+
 def needs_window(account_line):
     # Open the window by itself at startup? Only for a clear problem: no
-    # m365, no Node.js, or nobody signed in. "(could not check ...)" /
-    # "(unknown ...)" can be a network hiccup - not a reason.
+    # m365, no Node.js (or nvm with no version chosen), or nobody signed in.
+    # "(could not check ...)" / "(unknown ...)" can be a network hiccup - not
+    # a reason.
     line = account_line or ""
     return ("m365 not found" in line or "Node.js is not installed" in line
-            or "nobody" in line)
+            or "Node.js is not ready" in line or "nobody" in line)
 
 
 def needed_steps(node_found, cli_found, app_ok, account_line):

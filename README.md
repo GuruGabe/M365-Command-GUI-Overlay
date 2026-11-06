@@ -440,6 +440,9 @@ xattr -dr com.apple.quarantine dist/M365GUI
 | Symptom | Fix |
 |---------|-----|
 | Top bar shows `m365: (not found)` | Click **Locate m365...**, or install the CLI so `m365` is on the PATH. |
+| `Signed in as: (Node.js is not ready - no version chosen in nvm ...)` | nvm (a Node.js version manager) is installed but has no Node.js version chosen, so the CLI cannot start. In a terminal run `nvm install <version>`, then `nvm use <version>` - or install Node.js (**Settings > Set up the CLI**). |
+| After updating the CLI to 12.0: `Signed in as: (no answer ...)`, or a Microsoft sign-in page opens in your browser by itself | CLI 12 keeps its sign-in in the computer's own credential store and does not take over the old one, so everyone signs in once more after the update: **Settings > Set up the CLI**, then sign in. |
+| CLI 12: a Teams task given a team **name** fails with an access error | CLI 12 looks a team up by name through Microsoft Teams, which needs the Graph permission `Team.ReadBasic.All` on the app the CLI signs in with. Add it and consent, or give the team's id instead of its name. |
 | `Error: [object Object]` | The CLI is hiding a real error. Re-run the command in **Custom command** with `--debug` added to see the actual message (often a missing Graph permission or a premium-license requirement). |
 | "Windows protected your PC" on launch | The app isn't code-signed. Click **More info -> Run anyway**. |
 | A command says you're not signed in | Run `m365 login` in a terminal, or **Diagnostics -> Login status** to check. |

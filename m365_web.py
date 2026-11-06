@@ -566,12 +566,16 @@ def _shell_words(words):
 
 def api_setup():
     node = _node()
-    node_version = ""
+    node_version, node_note = "", ""
     if node:
         try:
-            node_version = subprocess.run(
+            answer = subprocess.run(
                 [node, "--version"], capture_output=True, text=True, timeout=30,
-                stdin=subprocess.DEVNULL, creationflags=app.NO_WINDOW).stdout.strip()
+                stdin=subprocess.DEVNULL, creationflags=app.NO_WINDOW)
+            node_version = (answer.stdout or "").strip()
+            # v0.17: nvm's stand-in node.exe with no version chosen.
+            if m365_setup.node_not_ready((answer.stdout or "") + (answer.stderr or "")):
+                node_version, node_note = "", m365_setup.NODE_NOT_READY
         except Exception:
             node_version = ""
     account = app.account_text(M365_PATH, lambda a: capture(a, timeout=60))
@@ -584,9 +588,10 @@ def api_setup():
         app_ok = m365_setup.app_id_set(rc, out)
     kind, how = m365_setup.node_install_plan(platform.system())
     m365 = M365_PATH or "m365"
-    return {"node": node, "node_version": node_version, "m365": M365_PATH,
-            "cli_version": cli_version, "app_ok": app_ok, "account": account,
-            "steps": m365_setup.needed_steps(bool(node), bool(M365_PATH), app_ok, account),
+    return {"node": node, "node_version": node_version, "node_note": node_note,
+            "m365": M365_PATH, "cli_version": cli_version, "app_ok": app_ok, "account": account,
+            "steps": m365_setup.needed_steps(bool(node) and not node_note, bool(M365_PATH),
+                                             app_ok, account),
             "node_command": _shell_words(how) if kind == "winget" else "",
             "node_url": how if kind == "download" else "",
             "npm_command": _shell_words(m365_setup.npm_install_command(
@@ -899,8 +904,8 @@ async function showSetup(why){$("setupwhy").textContent=why||"";$("setupbody").t
   const s=await getj("/api/setup");
   const box=(title,state,more)=>"<label>"+esc(title)+"</label><div>"+esc(state)+"</div>"+(more||"");
   const cmd=t=>"<pre style=\"user-select:all;margin:4px 0\">"+esc(t)+"</pre>";
-  let h=box("1. Node.js (the CLI runs on it)",s.node?"Installed: "+(s.node_version||"?")+" ("+s.node+")":"Not found on this server.",
-    s.node?"":(s.node_command?"<p class=\"note\">Paste into a terminal on this server (winget shows Node.js's license and asks for administrator approval):</p>"+cmd(s.node_command)
+  let h=box("1. Node.js (the CLI runs on it)",s.node_note?"Found "+s.node+", but it did not answer. "+s.node_note:s.node?"Installed: "+(s.node_version||"?")+" ("+s.node+")":"Not found on this server.",
+    s.node&&!s.node_note?"":(s.node_command?"<p class=\"note\">Paste into a terminal on this server (winget shows Node.js's license and asks for administrator approval):</p>"+cmd(s.node_command)
       :"<p class=\"note\">Install the LTS version from <a href=\""+esc(s.node_url)+"\" target=\"_blank\" rel=\"noopener\">"+esc(s.node_url)+"</a> on this server.</p>"));
   h+=box("2. The CLI for Microsoft 365",s.m365?(s.cli_version?"Installed: "+s.cli_version+" ("+s.m365+")":"Found "+s.m365+", but it did not answer."):"Not found on this server.",
     "<div class=\"bar\"><button id=\"setupcli\">"+(s.m365?"Update the CLI":"Install the CLI")+"</button></div><p class=\"note\">Runs: "+esc(s.npm_command)+"</p>");

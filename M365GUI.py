@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.16"
+APP_VERSION = "0.17"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -274,6 +274,17 @@ def account_text(m365_path, run):
         return "Signed in as: " + who
     if "logged out" in out.lower() or "not logged" in out.lower():
         return "Signed in as: nobody - run 'm365 login'"
+    if "timed out after" in out:
+        # v0.17: 'm365 status' fetches a new token when the saved one has run
+        # out. When it cannot do that silently it WAITS for a sign-in (a page
+        # opens in the browser, or a code M365GUI cannot show) - every CLI 12
+        # user once after updating (its sign-in moved to the OS credential
+        # store). The check's time limit then ends it.
+        return ("Signed in as: (no answer - the CLI may be waiting for you to sign in "
+                "again: Settings > Set up the CLI)")
+    if m365_setup.node_not_ready(out):
+        # v0.17: nvm's stand-in node with no version chosen.
+        return "Signed in as: (Node.js is not ready - no version chosen in nvm; m365 cannot run)"
     if "node" in out.lower() and ("not recognized" in out.lower() or "not found" in out.lower()):
         return "Signed in as: (Node.js is not installed - m365 cannot run)"
     return "Signed in as: (unknown - " + (" ".join(out.split())[:60] or "no answer") + ")"
@@ -1404,6 +1415,8 @@ class M365Gui(tk.Tk):
         self._setup_offered = True
         if "m365 not found" in account_line:
             reason = "M365GUI could not find the CLI for Microsoft 365 on this computer."
+        elif "Node.js is not ready" in account_line:
+            reason = m365_setup.NODE_NOT_READY
         elif "Node.js" in account_line:
             reason = "Node.js is not installed - the CLI for Microsoft 365 needs it."
         else:
@@ -1489,12 +1502,16 @@ class M365Gui(tk.Tk):
 
         def worker():
             node = find_node(os.path.dirname(m365) if m365 else "")
-            node_version = ""
+            node_version, node_note = "", ""
             if node:
                 try:
-                    node_version = subprocess.run(
+                    answer = subprocess.run(
                         [node, "--version"], capture_output=True, text=True, timeout=30,
-                        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout.strip()
+                        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+                    node_version = (answer.stdout or "").strip()
+                    # v0.17: nvm's stand-in node.exe with no version chosen.
+                    if m365_setup.node_not_ready((answer.stdout or "") + (answer.stderr or "")):
+                        node_version, node_note = "", m365_setup.NODE_NOT_READY
                 except Exception:
                     node_version = ""
             cli_version, app_ok, account = "", False, account_text(m365, self._quiet_run)
@@ -1505,19 +1522,24 @@ class M365Gui(tk.Tk):
                 rc, out = self._quiet_run(m365_setup.CLIENT_ID_COMMAND)
                 app_ok = m365_setup.app_id_set(rc, out)
             self.output_queue.put(lambda: self._setup_show(
-                node, node_version, m365, cli_version, app_ok, account))
+                node, node_version, m365, cli_version, app_ok, account, node_note))
         threading.Thread(target=worker, daemon=True).start()
 
-    def _setup_show(self, node, node_version, m365, cli_version, app_ok, account):
+    def _setup_show(self, node, node_version, m365, cli_version, app_ok, account,
+                    node_note=""):
         changed = account != self.account_label.cget("text")
-        self._setup_set("node", "Installed: Node.js %s  (%s)" % (node_version or "?", node)
-                        if node else "Node.js was not found. The CLI runs on it - install "
-                        "it first.")
+        if node and node_note:
+            # v0.17: found a node.exe, but it is nvm's stand-in with no version.
+            self._setup_set("node", "Found %s, but it did not answer. %s" % (node, node_note))
+        else:
+            self._setup_set("node", "Installed: Node.js %s  (%s)" % (node_version or "?", node)
+                            if node else "Node.js was not found. The CLI runs on it - install "
+                            "it first.")
         if m365 and cli_version:
             self._setup_set("cli", "Installed: CLI for Microsoft 365 %s  (%s)" % (cli_version, m365))
         elif m365:
             self._setup_set("cli", "Found %s, but it did not answer%s." % (
-                m365, " (install Node.js first)" if not node else ""))
+                m365, " (install Node.js first)" if not node or node_note else ""))
         else:
             self._setup_set("cli", "The CLI was not found. Install it (npm install -g %s), "
                             "or Locate m365... if it is somewhere M365GUI did not look."

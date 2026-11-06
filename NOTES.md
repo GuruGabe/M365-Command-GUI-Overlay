@@ -17,7 +17,8 @@
   Run for each CSV row, a Connection list (v0.11), Settings > Set up the
   CLI and Settings > Dark mode (v0.12).
 - Drives the [CLI for Microsoft 365](https://pnp.github.io/cli-microsoft365/)
-  (`m365`). Commands checked against CLI v11.11 with `m365 <command> --help`.
+  (`m365`). Commands checked against CLI v11.11 with `m365 <command> --help`,
+  and against CLI 12.0.0's command list (v0.17: 231 uses, 0 problems).
 - Builds for Windows (`Build-EXE.bat`), macOS (.dmg) and Linux (.deb / .rpm)
   - see the README's download table.
 - Shares its engine and design with
@@ -64,6 +65,10 @@
 - The CLI sometimes reports errors as `Error: [object Object]`; re-run with
   `--debug` to see the real message.
 - The command preview is editable by design - treat it like a terminal.
+- CLI 12 (v0.17): everyone signs in again after updating (its sign-in moved
+  to the computer's credential store); a team given by name needs
+  Team.ReadBasic.All; some real flow ids still fail with 'Invalid UUID'
+  (pnp/cli-microsoft365#7678).
 
 ## Contributing
 
@@ -73,6 +78,21 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-06-2026 (v0.17): CLI for Microsoft 365 12.0.0 became npm's 'latest' on
+  11-04-2026. Its package (integrity checked, read only - not run) was
+  compared with every command M365GUI uses (231, 0 problems) and its v12
+  upgrade guidance read: AUTH-1 (sign in again; until then 'm365 status'
+  waits for an interactive sign-in - Auth.js ensureAccessToken falls back
+  to browser / device code when no cached account), TEAMS-1, GEN-1 (no
+  M365GUI task uses --recycle / --skipRecycleBin; 'spo site remove' keeps
+  its recycle-bin default), GEN-2..4 (not used / text output only). 12.0
+  still validates flow ids with z.uuid() (#7678) and dropped the
+  TotalUserCount check in 'spo externaluser list'. Not live-tested with CLI
+  12 yet. Also: on a Windows PC whose Node.js folder had disappeared, 'node'
+  was nvm's stand-in, answering 'No active Node.js version is configured'
+  (exit 1, stderr only) - M365GUI now recognizes it (status, Set up the CLI,
+  browser version). 2 new test files.
+- 11-05-2026: v0.16 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-02-2026 (v0.16): second live run of CHANGE tasks (throwaway new user
   made and PERMANENTLY deleted; throwaway Teams 'M365GUI Live Teams Test
   1102' and 'M365GUI Live Teamify Test 1102' made and deleted - they sit in

@@ -1,6 +1,41 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-06-2026  v0.17 READY FOR CLI FOR MICROSOFT 365 12.0; NODE.JS THROUGH NVM.
+                  - The CLI's version 12.0.0 (11-04-2026) is what npm and
+                    Settings > Set up the CLI install now. Every command and
+                    option M365GUI uses was checked against 12.0's own
+                    command list: all 231 are still there. The texts
+                    M365GUI reads from the CLI are unchanged.
+                  - After updating to CLI 12, sign in once more: it keeps
+                    its sign-in in the computer's own credential store and
+                    does not take over the old one. Until then it waits for
+                    a sign-in when asked who is signed in (a sign-in page
+                    may open in the browser by itself). 'Signed in as' now
+                    says 'no answer - the CLI may be waiting for you to
+                    sign in again: Settings > Set up the CLI' instead of a
+                    long command line.
+                  - CLI 12 looks a team given by NAME up through Microsoft
+                    Teams (Graph permission Team.ReadBasic.All on the CLI's
+                    app). README Troubleshooting says what to do if a Teams
+                    task fails with an access error.
+                  - External (guest) users files were shared with: the CLI
+                    11.11 problem that could hide the list is fixed in CLI
+                    12.0 - the task says to update the CLI. Owners / Run
+                    history of a flow: CLI 12.0 still refuses some flow ids
+                    ('flowName: Invalid UUID') - the texts name both.
+                  - FIX: Node.js through nvm with no version chosen ('No
+                    active Node.js version is configured') showed
+                    'Installed: Node.js ?' and 'Signed in as: (unknown -
+                    ...)'. Now 'Node.js is not ready - no version chosen in
+                    nvm', and Set up the CLI opens by itself and says what
+                    to do (nvm install / nvm use, or install Node.js).
+                    Browser version too.
+                  - Tests: tests\test_v017_nvm_node.py,
+                    tests\test_v017_cli12.py; tests\test_v012_setup.py's
+                    stand-in for 'node --version' now has stderr, as a real
+                    one does.
+
 11-02-2026  v0.16 POWER PLATFORM, MORE READ-ONLY CHECKS, LIVE-TESTED CHANGES.
                   - New section: Power Platform (you need to be a Power
                     Platform or Global administrator).

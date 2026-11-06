@@ -210,6 +210,23 @@
                                message (often a missing Graph permission or a
                                premium-license requirement).
    "not signed in"           - Run "m365 login" in a terminal.
+   "Node.js is not ready - no version chosen in nvm"
+                             - nvm (a Node.js version manager) has no Node.js
+                               version chosen. In a terminal run
+                               "nvm install <version>", then
+                               "nvm use <version>" - or install Node.js
+                               (Settings > Set up the CLI).
+   After updating the CLI to 12.0: "Signed in as: (no answer ...)", or a
+   Microsoft sign-in page opens in the browser by itself
+                             - CLI 12 keeps its sign-in in the computer's own
+                               credential store and does not take over the
+                               old one: sign in once more (Settings > Set up
+                               the CLI).
+   CLI 12: a Teams task given a team NAME fails with an access error
+                             - CLI 12 looks a team up by name through
+                               Microsoft Teams, which needs the Graph
+                               permission Team.ReadBasic.All on the CLI's app.
+                               Add it and consent, or give the team's id.
    SharePoint / OneDrive tasks fail with {"error":{"error":"invalid_request"}}
                              - the CLI is signed in through the Azure CLI's
                                app, which SharePoint refuses. Run "m365 setup"

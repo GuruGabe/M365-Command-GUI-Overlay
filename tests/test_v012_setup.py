@@ -97,7 +97,8 @@ def fake_quiet(self, argv, timeout=60):
     return 1, "unexpected"
 m.M365Gui._quiet_run = fake_quiet
 real_run, real_popen = m.subprocess.run, m.subprocess.Popen
-m.subprocess.run = lambda argv, **kw: types.SimpleNamespace(stdout="v24.22.1\n", returncode=0)
+# stderr too, like a real subprocess.run result (0.17 reads it: nvm's answer)
+m.subprocess.run = lambda argv, **kw: types.SimpleNamespace(stdout="v24.22.1\n", stderr="", returncode=0)
 class FakeProc:
     def __init__(self, lines, rc):
         self.stdout, self.returncode, self.pid = iter(lines), rc, 1
