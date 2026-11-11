@@ -223,7 +223,10 @@ def run_command(job, argv, save_fmt=None, save_name="results"):
     if save_fmt:
         text = proc.stdout.read()
         proc.wait()
-        if proc.returncode == 0:
+        unknown = m365_setup.unknown_command_note(text[:2000])     # 0.19
+        if unknown:
+            job.out(unknown + "\n")
+        elif proc.returncode == 0:
             folder = os.path.join(app.LOG_DIR, "Downloads")
             os.makedirs(folder, exist_ok=True)
             name = "%s_%s.%s" % (re.sub(r"[^A-Za-z0-9]+", "-", save_name).strip("-") or "results",
@@ -236,9 +239,16 @@ def run_command(job, argv, save_fmt=None, save_name="results"):
         else:
             job.out(text)
     else:
+        unknown, first = "", True
         for line in proc.stdout:
-            job.out(line)
+            if first:
+                # 0.19: an unknown command exits 0 with a help screen.
+                unknown, first = m365_setup.unknown_command_note(line), False
+            if not unknown:
+                job.out(line)
         proc.wait()
+        if unknown:
+            job.out(unknown + "\n")
     job.rc = proc.returncode
     job.out("\n[exit code %d]\n" % proc.returncode)
     if cat.changes_connection(argv):

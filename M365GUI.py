@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.18"
+APP_VERSION = "0.19"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -388,6 +388,11 @@ class M365Gui(tk.Tk):
         # in the Help menu (saved in m365gui.ini).
         self.check_updates = self._setting("check_updates", "true") == "true"
         self.show_whats_new = self._setting("show_whats_new", "true") == "true"
+        # v0.19 (Gabe 11-11-2026, as GAMGUI 3.04): 'Install updates
+        # automatically' - an update found at startup is installed with NO
+        # question where that needs no administrator prompt
+        # (m365_update.silent_update_blocker); everywhere else M365GUI asks.
+        self.auto_install_updates = self._setting("auto_install_updates", "false") == "true"
         self._update_in_progress = False
         self.favorites, self.recent = self._load_tasklists()
         self._group_cache = None             # the Pick... group list, loaded once
@@ -1212,23 +1217,32 @@ class M365Gui(tk.Tk):
                 self.running_proc = proc
                 # v0.12: the last lines, to tell a sign-in problem (Set up the CLI).
                 recent = []
+                unknown = ""
                 if save_to:
                     # Collected, then written only if the command worked - an
                     # error message must not end up in the CSV / JSON file.
                     text = proc.stdout.read()
                     proc.wait()
-                    if proc.returncode == 0:
+                    # 0.19: an unknown command exits 0 with a help screen.
+                    unknown = m365_setup.unknown_command_note(text[:2000])
+                    if proc.returncode == 0 and not unknown:
                         self.output_queue.put(save_results(save_to, text))
-                    else:
+                    elif not unknown:
                         self.output_queue.put(text)
                         recent.append(text[-20000:])
                 else:
                     for line in proc.stdout:
-                        self.output_queue.put(line)
+                        if not recent and not unknown:
+                            unknown = m365_setup.unknown_command_note(line)
+                        if not unknown:
+                            self.output_queue.put(line)
                         recent.append(line)
                         del recent[:-200]
                 proc.wait()
-                if proc.returncode != 0:
+                if unknown:
+                    self.output_queue.put("\n" + unknown + "\n")
+                    self._log("UNKNOWN COMMAND: " + m365_setup.unknown_command(unknown))
+                elif proc.returncode != 0:
                     self.output_queue.put(
                         "\n[exit code %d]  Tip: if the error is unclear (m365 "
                         "sometimes shows 'Error: [object Object]'), re-run the "
@@ -1704,6 +1718,10 @@ class M365Gui(tk.Tk):
         helpm.add_checkbutton(label="Check for updates at startup",
                               variable=self.check_updates_var,
                               command=self._toggle_check_updates)
+        self.auto_install_var = tk.BooleanVar(value=self.auto_install_updates)
+        helpm.add_checkbutton(label="Install updates automatically (no question)",
+                              variable=self.auto_install_var,
+                              command=self._toggle_auto_install)
         self.whats_new_var = tk.BooleanVar(value=self.show_whats_new)
         helpm.add_checkbutton(label="Show What's new after an update",
                               variable=self.whats_new_var,
@@ -1790,6 +1808,89 @@ class M365Gui(tk.Tk):
         self.check_updates = bool(self.check_updates_var.get())
         self._save_setting("check_updates", "true" if self.check_updates else "false")
 
+    def _toggle_auto_install(self):
+        # v0.19: it acts on the startup check, so switching it on switches
+        # that on too.
+        self.auto_install_updates = bool(self.auto_install_var.get())
+        self._save_setting("auto_install_updates",
+                           "true" if self.auto_install_updates else "false")
+        if self.auto_install_updates and not self.check_updates:
+            self.check_updates = True
+            self.check_updates_var.set(True)
+            self._save_setting("check_updates", "true")
+        self._log("Install updates automatically: " + ("on" if self.auto_install_updates else "off"))
+
+    def _check_silent_update_result(self):
+        # v0.19: an automatic update records the version it went for. If this
+        # copy is still older, it did not finish: say so once, and ask before
+        # trying that version again (so a failing update can never loop).
+        pending = self._setting("silent_update_pending", "")
+        if not pending:
+            return
+        self._save_setting("silent_update_pending", "")
+        if self._version_tuple(APP_VERSION) >= self._version_tuple(pending):
+            self._log("Automatic update to " + pending + " finished.")
+            return
+        self._save_setting("silent_update_failed", pending)
+        self._log("Automatic update to " + pending + " did not finish (still "
+                  + APP_VERSION + ").")
+        where = (os.path.join(app_dir(), "Logs", "M365GUI-Update.log")
+                 if sys.platform == "win32" else os.path.join(LOG_DIR, "m365gui-update.log"))
+        messagebox.showwarning(
+            APP_NAME + " - Automatic update",
+            "The automatic update to " + pending + " did not finish, so this is still "
+            + APP_VERSION + ".\n\nDetails: " + where + "\n\n" + APP_NAME
+            + " will ask before trying " + pending + " again.")
+
+    def _silent_update_blocker(self, tag):
+        # v0.19: "" when this copy can update itself with no question.
+        import platform
+        system = platform.system()
+        posix_kind, exe_install, updater_present = "", False, True
+        if system == "Windows":
+            appdir = app_dir()
+            reg = registry_exe_install()
+            exe_install = bool(reg and _same_path(appdir, reg.get("location", "")))
+            updater_present = os.path.isfile(os.path.join(appdir, "updatem365gui.ps1"))
+        else:
+            posix_kind, _target = m365_update.install_kind(
+                system, sys.executable, getattr(sys, "frozen", False),
+                lambda path: os.access(path, os.W_OK))
+        return m365_update.silent_update_blocker(
+            system, getattr(sys, "frozen", False), self.running_proc is not None,
+            exe_install, updater_present, posix_kind,
+            self._setting("silent_update_failed", ""), tag)
+
+    def _silent_self_update(self, tag):
+        # v0.19: the update with no question. Windows: the bundled updater,
+        # hidden (-Quiet), waits for M365GUI to close, updates the portable
+        # copy and reopens it (-Launch; it reopens the old copy if the update
+        # fails). macOS / Linux: the same built-in updater as after a yes.
+        self._save_setting("silent_update_pending", tag)
+        self._log("Automatic update: " + APP_VERSION + " -> " + tag
+                  + " ('Install updates automatically' is on - no question)")
+        if sys.platform != "win32":
+            self._self_update_posix(tag)
+            return
+        appdir = app_dir()
+        updater = os.path.join(appdir, "updatem365gui.ps1")
+        inner = ("Start-Sleep -Seconds 3; & '" + updater.replace("'", "''")
+                 + "' -InstallType zip -InstallRoot '" + appdir.replace("'", "''")
+                 + "' -Quiet -Launch")
+        try:
+            subprocess.Popen(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-NoProfile",
+                 "-WindowStyle", "Hidden", "-Command", inner],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        except Exception as exc:
+            self._log("Automatic update could not start: " + str(exc))
+            self._save_setting("silent_update_pending", "")
+            self._prompt_update(tag)
+            return
+        self._update_in_progress = True
+        self.destroy()
+
     def _toggle_whats_new(self):
         self.show_whats_new = bool(self.whats_new_var.get())
         self._save_setting("show_whats_new", "true" if self.show_whats_new else "false")
@@ -1803,6 +1904,7 @@ class M365Gui(tk.Tk):
         # Once, shortly after the window opens: What's new (if this copy was
         # just updated), then the silent update check.
         self._maybe_show_whats_new()
+        self._check_silent_update_result()           # v0.19
         if self.check_updates:
             self._check_updates_async(True)
 
@@ -1884,6 +1986,14 @@ class M365Gui(tk.Tk):
             self._log("Update check failed: " + (err or "no tag"))
             return
         if self._version_tuple(tag) > self._version_tuple(APP_VERSION):
+            # v0.19: 'Install updates automatically' - no question where none
+            # is needed; otherwise (and for the menu's manual check) ask.
+            if auto and getattr(self, "auto_install_updates", False):
+                why = self._silent_update_blocker(tag)
+                if not why:
+                    self._silent_self_update(tag)
+                    return
+                self._log("Automatic update to " + tag + " needs a question: " + why)
             self._prompt_update(tag)
         else:
             self._log("Update check: up to date (" + APP_VERSION + ").")

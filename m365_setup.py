@@ -154,6 +154,28 @@ def needed_steps(node_found, cli_found, app_ok, account_line):
     return steps
 
 
+# 0.19: what the CLI prints for a command it does not have (seen with CLI
+# 12.0.0, 11-10-2026) - followed by its help screen, and exit code 0.
+_UNKNOWN_COMMAND = re.compile(r"^Command '([^'\r\n]+)' was not found\.", re.M)
+
+
+def unknown_command(output):
+    # The command the CLI said it does not have, or "".
+    found = _UNKNOWN_COMMAND.search(output or "")
+    return found.group(1) if found else ""
+
+
+def unknown_command_note(output):
+    # The line M365GUI shows instead of treating that help screen as a result.
+    name = unknown_command(output)
+    if not name:
+        return ""
+    return ("[The CLI for Microsoft 365 on this computer does not have the command "
+            "'m365 %s' - the task needs a newer CLI. Update it: Settings > Set up the "
+            "CLI > Install / Update the CLI, then run the task again. Nothing was "
+            "changed.]" % name)
+
+
 def setup_can_fix(output):
     return bool(_SETUP_ERRORS.search(output or ""))
 

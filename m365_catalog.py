@@ -135,7 +135,10 @@ TASKS = {
     "entra user set --userName {email} --removeManager",
     [F("User (UPN)", "email")]),
   T("Invite a guest (external user)",
-    "Invites someone outside the organization and emails them the invitation.",
+    "Invites someone outside the organization and emails them the invitation. "
+    "'Guest invitations not allowed for your company' means the organization's settings "
+    "do not allow it (Microsoft Entra admin center > External Identities > External "
+    "collaboration settings).",
     "entra user guest add --emailAddress {email} [--displayName {display}] "
     "[--welcomeMessage {message}] --sendInvitationMessage",
     [F("Their email address", "email"), F("Display name (optional)", "display", False),
@@ -411,11 +414,32 @@ TASKS = {
     "The AI agents registered in Microsoft Entra ID with their own identity (Entra Agent "
     "ID): name and id. Blank means none.",
     "entra agent list --output text", []),
+  # v0.19 (11-10-2026): new in CLI 12.0.0; run live (read-only, none here).
+  T("AI agent blueprints (Entra Agent ID)",
+    "The blueprints (templates) that AI agent identities are made from in Microsoft "
+    "Entra ID: name and id. Blank means none. Needs CLI for Microsoft 365 12.0 or newer.",
+    "entra agent blueprint list --output text", []),
+  T("AI agent blueprint principals (Entra Agent ID)",
+    "The blueprint principals in your tenant - a blueprint's presence here, like an "
+    "app's enterprise app: name and id. Blank means none. Needs CLI for Microsoft 365 "
+    "12.0 or newer.",
+    "entra agent blueprintprincipal list --output text", []),
   T("Group settings for the organization",
     "The organization-wide settings for Microsoft 365 groups (for example who may create "
     "groups, guest access, naming rules), if any were set. An empty result means the "
     "defaults are used.",
     "entra groupsetting list --output text", []),
+  # v0.19 (11-10-2026): run live (read-only).
+  T("Group setting templates",
+    "The templates the organization-wide group settings are made from (for example "
+    "Group.Unified for Microsoft 365 groups, Group.Unified.Guest for guest access): "
+    "name, id and the settings each one holds. Read-only.",
+    "entra groupsettingtemplate list --output text", []),
+  T("Multi-tenant organization",
+    "Whether this tenant belongs to a multi-tenant organization (several Microsoft 365 "
+    "tenants of one organization working together), with its name and state. Blank "
+    "fields mean it does not.",
+    "entra multitenant get --output text", []),
   T("Are names hidden in usage reports?",
     "Whether usage reports show people's names or hide them (Microsoft 365 admin center > "
     "Settings > Org settings > Reports).",
@@ -431,6 +455,10 @@ TASKS = {
      F("From (optional) e.g. 2026-10-01", "start", False), F("Until (optional)", "end", False)]),
   T("Retention labels", "The retention labels defined in Purview.",
     "purview retentionlabel list --output text", []),
+  # v0.19 (11-10-2026): run live (read-only); none in the tenant.
+  T("Retention event types", "The event types (for example 'Employee leaves') that "
+    "event-based retention labels in Purview start counting from. Blank means none.",
+    "purview retentioneventtype list --output text", []),
   T("Sensitivity labels", "The sensitivity labels defined in Purview. 'The resource could "
     "not be found' means the organization has none, or its licenses do not include "
     "them (Microsoft Purview Information Protection).",
@@ -606,6 +634,13 @@ TASKS = {
   # v0.7 (10-23-2026): options checked against the CLI's docs.
   T("List admin roles", "Every Microsoft Entra admin role (Global Administrator, User "
     "Administrator...).", "entra roledefinition list --output text", []),
+  T("What an admin role can do",
+    "Every permission one Entra admin role grants, one per line (for example "
+    "microsoft.directory/users/password/update). Use the exact name from 'List admin "
+    "roles'. Read-only.",
+    "entra roledefinition get --displayName {role} --query "
+    "\"rolePermissions[].allowedResourceActions[]\" --output text",
+    [F("Role name e.g. Helpdesk Administrator", "role")]),
   T("Give someone an admin role (whole organization)",
     "Assigns an Entra admin role, e.g. 'Helpdesk Administrator', to a user. Get the exact "
     "name from 'List admin roles'.",
@@ -773,6 +808,52 @@ TASKS = {
     "highlighted everywhere. Blank means none. You need to be a SharePoint or Global "
     "administrator.",
     "spo orgnewssite list --output text", []),
+  # v0.19 (11-10-2026): run live (read-only); 'blank' = none in the tenant.
+  T("Term store groups (managed metadata)",
+    "The groups in the SharePoint term store, where the organization keeps its shared "
+    "lists of terms (departments, locations...): name and id. Use 'Term sets in a term "
+    "group' to see what one holds.",
+    "spo term group list --output text", []),
+  T("Term sets in a term group",
+    "The term sets (lists of terms) in one term store group. Get the group's name from "
+    "'Term store groups'.",
+    "spo term set list --termGroupName {group} --output text",
+    [F("Term group name", "group")]),
+  T("Site designs",
+    "The organization's custom site designs (templates people can pick when they create "
+    "or apply a site). Blank means none.",
+    "spo sitedesign list --output text", []),
+  T("Site scripts",
+    "The site scripts (the actions behind site designs). Blank means none.",
+    "spo sitescript list --output text", []),
+  T("Custom themes",
+    "The organization's own SharePoint color themes. Blank means none.",
+    "spo theme list --output text", []),
+  T("Are SharePoint's default themes hidden?",
+    "true = people can pick only the organization's own themes; false = SharePoint's "
+    "built-in themes are offered too.",
+    "spo hidedefaultthemes get --output text", []),
+  T("Office 365 CDN on or off",
+    "Whether the Office 365 content delivery network (faster loading of site assets) "
+    "is turned on: true or false.",
+    "spo cdn get --type {type} --output text",
+    [F("Which CDN", "type", choices=["Public", "Private"], default="Public")]),
+  T("Office 365 CDN origins",
+    "The libraries / folders the Office 365 CDN serves files from. Blank means none.",
+    "spo cdn origin list --type {type} --output text",
+    [F("Which CDN", "type", choices=["Public", "Private"], default="Public")]),
+  T("Tenant app catalog address",
+    "The address of the SharePoint app catalog site (where SharePoint apps and add-ins "
+    "are uploaded for the whole organization). Blank means there is none.",
+    "spo tenant appcatalogurl get --output text", []),
+  T("Organization assets libraries",
+    "Libraries registered as organization assets (shared images, templates, fonts "
+    "offered in Office apps and SharePoint). Blank means none.",
+    "spo orgassetslibrary list --output text", []),
+  T("Brand center settings",
+    "The SharePoint brand center: whether it is turned on, its site and its colors / "
+    "fonts libraries.",
+    "spo brandcenter settings list --output text", []),
   # ---- v0.15: more read-only SharePoint (checked live 10-30-2026, CLI v11.11).
   # 'spo user list', 'spo roledefinition list' and 'spo site versionpolicy
   # get' answer "Attempted to perform an unauthorized operation" on a site

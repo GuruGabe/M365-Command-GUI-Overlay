@@ -77,8 +77,11 @@
     Script:   updatem365gui.ps1
     Author:   Gabe - FSISD IT Department (built with Claude)
     Created:  10-23-2026 (from GAMGUI's updategamgui.ps1 2.1)
-    Modified: 10-23-2026
-    Version:  1.0
+    Modified: 11-11-2026
+    Version:  1.1
+              (1.1: with -Launch, M365GUI is reopened even when the update
+              fails, so a hidden -Quiet update started by M365GUI 0.19's
+              'Install updates automatically' never leaves it closed.)
     Requires: Windows PowerShell 5.1 or PowerShell 7+, internet access to
               api.github.com and github.com. Updating a portable copy needs
               write access to -InstallRoot. Updating the Setup.exe install needs
@@ -567,6 +570,16 @@ catch {
     # scheduled task records a failure.
     $err = $_.Exception.Message
     Write-Log ("ERROR: " + $err)
+    # 1.1: a hidden (-Quiet) update started by M365GUI must not leave it closed -
+    # reopen the copy that is there (M365GUI then says the update did not finish).
+    if ($Launch -and (Test-Path -LiteralPath $ExePath)) {
+        try {
+            Write-Log "Reopening M365GUI after the failed update."
+            Start-Process -FilePath $ExePath
+        } catch {
+            Write-Log ("Could not reopen M365GUI: " + $_.Exception.Message)
+        }
+    }
     if (-not $Quiet) {
         Write-Host ("Update failed: " + $err) -ForegroundColor Red
         Write-Host "If this was a permissions error, re-run PowerShell as Administrator." -ForegroundColor Yellow

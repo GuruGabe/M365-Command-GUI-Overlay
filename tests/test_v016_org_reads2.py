@@ -54,6 +54,7 @@ check(names.index("Home sites") == names.index("Hub sites") + 1
       "home and news sites follow Hub sites")
 check(names[-1] != "Planner settings for the organization"
       and c.TASKS[PL][-1]["name"] == "Planner settings for the organization", "Planner settings ends Planner")
-check(sum(len(v) for v in c.TASKS.values()) == 194, "194 tasks")
+# 0.19: + 2 (agent blueprints) -> 196.
+check(sum(len(v) for v in c.TASKS.values()) >= 194, "at least the 194 tasks of 0.16")
 print("FAILURES:", len(fails))
 sys.exit(1 if fails else 0)

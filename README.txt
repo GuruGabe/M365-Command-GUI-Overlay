@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 194
-   admin tasks as fill-in forms across 14 sections (v0.16): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 211
+   admin tasks as fill-in forms across 14 sections (v0.19): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security, Power
    Platform and Diagnostics
@@ -84,6 +84,14 @@
    re-runs the new Setup.exe (administrator approval needed); a portable copy
    is replaced by updatem365gui.ps1, keeping m365gui.ini and Logs. Help >
    What's new lists the changes.
+   NO QUESTION (v0.19): Help > Install updates automatically (off by
+   default) installs an update found at startup straight away - M365GUI
+   closes, updates and reopens by itself (on Windows the updater runs
+   hidden). It still asks for an installed (Setup.exe) copy (administrator
+   approval), a Linux .deb / .rpm (sudo), a copy run from source, or while a
+   command is running. If an automatic update does not finish, the old copy
+   reopens, M365GUI says so once, and it asks before trying that version
+   again.
    From source:
      a. Install Python 3.10+.
      b. python M365GUI.py

@@ -6,7 +6,7 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 194 tasks in 14 sections (counted 11-02-2026, v0.16), plus a Custom-command
+- 211 tasks in 14 sections (counted 11-10-2026, v0.19), plus a Custom-command
   mode and ten guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
   user, move a user's OneDrive files to a Team or SharePoint site, who holds
@@ -78,6 +78,45 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-10-2026 (v0.19): CLI 12.0.0 has 10 commands 11.11.0 lacks
+  (allCommandsFull.json): entra agent blueprint list / blueprintprincipal
+  list (read-only - new tasks, run live, none in the tenant), outlook
+  calendargroup add, outlook event add, spe container permission add /
+  remove / set, spo folder unarchive, spo page unpublish, spo web rule get.
+  An unknown command makes the CLI print "Command '<name>' was not found.",
+  its help screen and EXIT 0 - M365GUI now shows a note instead (and Save
+  results writes no file): m365_setup.unknown_command_note, desktop
+  run worker, m365_web.run_command. 196 tasks. Read-only reviews live on
+  CLI 12.0.0 (only list / get / GET request allowed): admin roles 21
+  assignments, Conditional Access 9 policies, Team settings 3 Teams, flows
+  and apps 6 flows, Files shared by link (a OneDrive folder) - all OK, 0
+  failed commands. Tests:
+  test_v019_unknown_command.py.
+  Later the same day: 15 more read-only tasks (term store groups / term
+  sets, site designs, site scripts, themes, default themes hidden, Office
+  365 CDN on/off + origins, app catalog address, organization assets
+  libraries, brand center, what an admin role can do via --query
+  rolePermissions[].allowedResourceActions[], group setting templates,
+  multi-tenant organization, retention event types) - each run live
+  first; 211 tasks. Not added (failed live, need consent / roles the CLI's
+  sign-in does not have): booking business list, viva engage network
+  list, purview threatassessment list; spo homesite get needs --url (the
+  'Home sites' list task covers it). Change tasks run live on throwaway
+  objects (deleted after): connection set (rename and back), entra
+  roleassignment add (a read-only role on a throwaway user; the
+  assignment went with the user). Invite a guest got a note on the
+  'Guest invitations not allowed for your company' answer. Tests:
+  test_v019_more_reads.py.
+  Then (Gabe: "add the ability to silently update" - at startup): Help >
+  Install updates automatically (no question), setting auto_install_updates,
+  off by default; m365_update.silent_update_blocker (Windows portable +
+  frozen + updatem365gui.ps1 / mac-app / linux-portable = silent; Setup.exe,
+  source, .deb/.rpm, a running command or the version that failed last time
+  = ask). Marker silent_update_pending -> next start: older = warn once +
+  silent_update_failed (asks for that version; no loop). updatem365gui.ps1
+  1.1 reopens M365GUI in its catch when -Launch. Same design as GAMGUI 3.04.
+  Tests: test_v019_silent_update.py.
+- 11-10-2026: v0.18 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-10-2026 (v0.18): after Node.js + nvm were reinstalled on a Windows PC,
   'npm prefix -g' was nvm's folder for the active Node.js version
   (...\nvm\installs\v26.13.0) while the CLI in use was in %APPDATA%\npm;

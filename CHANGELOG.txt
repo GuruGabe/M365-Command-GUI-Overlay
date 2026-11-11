@@ -1,6 +1,51 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-11-2026  v0.19 INSTALL UPDATES AUTOMATICALLY; 15 MORE READ-ONLY TASKS; A COMMAND YOUR CLI DOES NOT HAVE.
+                  - FIX: when the installed CLI does not have a task's
+                    command, it prints its whole help screen and still
+                    reports success - M365GUI showed that as the result,
+                    and Save results wrote the help screen into the file.
+                    Now M365GUI says which command the CLI does not have
+                    and to update the CLI (Settings > Set up the CLI); no
+                    file is saved. Browser version too.
+                  - New in Service health and security: AI agent blueprints
+                    and AI agent blueprint principals (Entra Agent ID) -
+                    new in CLI 12.0; read-only, run live.
+                  - CLI 12.0.0, run live: Who holds admin roles, the
+                    Conditional Access review, the Team settings review and
+                    the flows and apps review and Files shared by link all
+                    worked.
+                  - 15 more read-only tasks, each run live first:
+                    SharePoint - Term store groups, Term sets in a term
+                    group, Site designs, Site scripts, Custom themes, Are
+                    SharePoint's default themes hidden?, Office 365 CDN on
+                    or off, Office 365 CDN origins, Tenant app catalog
+                    address, Organization assets libraries, Brand center
+                    settings; Roles and admin units - What an admin role
+                    can do (its permissions, one per line); Service health
+                    and security - Group setting templates, Multi-tenant
+                    organization, Retention event types. 211 tasks.
+                  - Invite a guest: a note on 'Guest invitations not
+                    allowed for your company' (the organization's External
+                    collaboration settings).
+                  - Run live on throwaway objects (deleted after): Rename a
+                    connection (and back), Give someone an admin role (a
+                    read-only role on a throwaway user) - both worked.
+                  - New: Help > Install updates automatically (no
+                    question). Off by default. When on, an update the
+                    startup check finds is installed without asking:
+                    M365GUI closes, updates and reopens by itself (Windows
+                    portable copy: the updater runs hidden). It still asks
+                    for the installed (Setup.exe) copy, a .deb / .rpm, a
+                    source copy, or while a command runs. If an automatic
+                    update does not finish, the old copy reopens, M365GUI
+                    says so once and asks before trying that version again.
+                    updatem365gui.ps1 1.1: with -Launch it reopens M365GUI
+                    even when the update fails.
+                  - Tests: tests\test_v019_unknown_command.py,
+                    tests\test_v019_more_reads.py,
+                    tests\test_v019_silent_update.py.
 11-10-2026  v0.18 UPDATE THE CLI WHERE IT IS (NODE.JS THROUGH NVM).
                   - FIX: Settings > Set up the CLI > Install / Update the
                     CLI now updates the CLI M365GUI uses, in the folder it
