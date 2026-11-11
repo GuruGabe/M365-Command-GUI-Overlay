@@ -78,6 +78,22 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-10-2026 (v0.18): after Node.js + nvm were reinstalled on a Windows PC,
+  'npm prefix -g' was nvm's folder for the active Node.js version
+  (...\nvm\installs\v26.13.0) while the CLI in use was in %APPDATA%\npm;
+  the CLI was updated to 12.0.0 by hand with --prefix %APPDATA%\npm (one
+  m365 kept). npm 11.20 skipped the install scripts of keytar and
+  @azure/msal-node-extensions (allow-scripts) - both ship prebuilt .node
+  files (dpapi.node x64/ia32/arm64, keytar.node), so CLI 12's credential
+  store still has them. M365GUI's Install / Update the CLI now passes
+  --prefix (m365_setup.cli_prefix: npm's Windows / Unix layouts) and finds
+  npm.exe next to node.exe. Run live with CLI 12.0.0 after signing in again: 71 of the 73 read-only
+  tasks that need no typed value worked; Sensitivity labels fails as with
+  11.11 when a tenant has no labels, and Sign in another account waits for a
+  code (not a read-only task). A Teams task given a team name worked, and
+  the sign-in carried over between commands.
+  Tests: test_v018_npm_prefix.py.
+- 11-06-2026: v0.17 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-06-2026 (v0.17): CLI for Microsoft 365 12.0.0 became npm's 'latest' on
   11-04-2026. Its package (integrity checked, read only - not run) was
   compared with every command M365GUI uses (231, 0 problems) and its v12

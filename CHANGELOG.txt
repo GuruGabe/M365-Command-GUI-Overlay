@@ -1,6 +1,23 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-10-2026  v0.18 UPDATE THE CLI WHERE IT IS (NODE.JS THROUGH NVM).
+                  - FIX: Settings > Set up the CLI > Install / Update the
+                    CLI now updates the CLI M365GUI uses, in the folder it
+                    came from ('npm install -g --prefix <that folder>').
+                    With nvm, npm's own global folder is the active Node.js
+                    version's folder, so a plain 'npm install -g' added a
+                    SECOND copy of the CLI there while the old one stayed
+                    first - the update did not seem to work. A first
+                    install is unchanged. Browser version too.
+                  - FIX: npm.exe next to node.exe is found (nvm on Windows
+                    has npm.exe and no npm.cmd).
+                  - CLI 12.0.0 run live (after signing in again): 71 of the
+                    73 read-only tasks that need no typed value worked;
+                    Sensitivity labels fails as with 11.11 when a tenant has
+                    no labels, and Sign in another account waits for a code.
+                    A Teams task given a team name worked.
+                  - Tests: tests\test_v018_npm_prefix.py.
 11-06-2026  v0.17 READY FOR CLI FOR MICROSOFT 365 12.0; NODE.JS THROUGH NVM.
                   - The CLI's version 12.0.0 (11-04-2026) is what npm and
                     Settings > Set up the CLI install now. Every command and

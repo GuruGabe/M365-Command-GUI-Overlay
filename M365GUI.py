@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.17"
+APP_VERSION = "0.18"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -1633,7 +1633,8 @@ class M365Gui(tk.Tk):
             messagebox.showinfo(APP_NAME, "Install Node.js first (step 1) - npm, which "
                                 "installs the CLI, comes with it.", parent=parent)
             return
-        command = m365_setup.npm_install_command(npm)
+        # 0.18: an update goes into the folder the CLI in use came from.
+        command = m365_setup.npm_install_command(npm, self.m365_path)
         if not messagebox.askyesno(APP_NAME + " - Install the CLI", (
                 "Install (or update) the CLI for Microsoft 365?\n\n"
                 + " ".join(quote_if_needed(a) for a in command) + "\n\nnpm downloads it "

@@ -595,7 +595,7 @@ def api_setup():
             "node_command": _shell_words(how) if kind == "winget" else "",
             "node_url": how if kind == "download" else "",
             "npm_command": _shell_words(m365_setup.npm_install_command(
-                m365_setup.find_npm(node) or "npm")),
+                m365_setup.find_npm(node) or "npm", M365_PATH)),
             "commands": {"setup": _shell_words([m365] + m365_setup.SETUP_COMMAND),
                          "browser": _shell_words([m365] + m365_setup.login_command("browser")),
                          "code": _shell_words([m365] + m365_setup.login_command("deviceCode"))}}
@@ -609,7 +609,7 @@ def api_setup_install_cli():
     npm = m365_setup.find_npm(node)
     if not node or not npm:
         return {"error": "Install Node.js first (step 1) - npm, which installs the CLI, comes with it."}
-    command = m365_setup.npm_install_command(npm)
+    command = m365_setup.npm_install_command(npm, M365_PATH)    # 0.18: --prefix
 
     def target(job):
         global M365_PATH

@@ -47,17 +47,43 @@ _SETUP_ERRORS = re.compile(
 
 
 def find_npm(node_path, which=None):
-    # npm, which comes with Node.js: next to node, else on the PATH.
+    # npm, which comes with Node.js: next to node, else on the PATH. 0.18:
+    # npm.exe too - nvm's stand-ins on Windows have npm.exe and no npm.cmd
+    # (seen 11-10-2026).
     which = which or shutil.which
     folder = os.path.dirname(node_path or "")
-    for name in (("npm.cmd",) if os.name == "nt" else ("npm",)):
+    for name in (("npm.cmd", "npm.exe") if os.name == "nt" else ("npm",)):
         if folder and os.path.isfile(os.path.join(folder, name)):
             return os.path.join(folder, name)
     return which("npm") or ""
 
 
-def npm_install_command(npm):
-    return [npm, "install", "-g", NPM_PACKAGE]
+_CLI_PACKAGE_JSON = os.path.join("node_modules", "@pnp", "cli-microsoft365", "package.json")
+
+
+def cli_prefix(m365_path):
+    # 0.18: the npm prefix the CLI M365GUI uses was installed into, so
+    # Update the CLI replaces THAT copy. With nvm, 'npm install -g' goes into
+    # the active Node version's own folder (seen 11-10-2026) - a second m365
+    # would appear while the old one stays first on the PATH. npm's layout:
+    # Windows <prefix>\m365.cmd + <prefix>\node_modules; macOS / Linux
+    # <prefix>/bin/m365 + <prefix>/lib/node_modules. "" = not known (npm's
+    # own default is used, as before).
+    if not m365_path:
+        return ""
+    folder = os.path.dirname(os.path.abspath(m365_path))
+    if os.path.isfile(os.path.join(folder, _CLI_PACKAGE_JSON)):
+        return folder
+    parent = os.path.dirname(folder)
+    if os.path.basename(folder) == "bin" and \
+            os.path.isfile(os.path.join(parent, "lib", _CLI_PACKAGE_JSON)):
+        return parent
+    return ""
+
+
+def npm_install_command(npm, m365_path=""):
+    prefix = cli_prefix(m365_path)
+    return [npm, "install", "-g"] + (["--prefix", prefix] if prefix else []) + [NPM_PACKAGE]
 
 
 def node_install_plan(system, which=None):
