@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.19"
+APP_VERSION = "0.21"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.

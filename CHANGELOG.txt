@@ -1,6 +1,23 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-13-2026  v0.21 EIGHT MORE READ-ONLY TASKS.
+                  - Service health and security: Retention events.
+                  - Outlook: A user's calendar groups.
+                  - SharePoint: Subsites of a site, Features turned on for a
+                    site, A list's details (items, versions), Views of a
+                    list, Content types in a list, Languages a site can use.
+                  - Each one was run live before it was added. 226 tasks.
+                  - Tests: tests\test_v021_more_reads.py.
+11-13-2026  v0.20 SEVEN MORE READ-ONLY TASKS.
+                  - Service health and security: An app registration's
+                    details, Roles an app registration defines (app roles),
+                    An enterprise app's details.
+                  - SharePoint: Terms in a term set, Office 365 CDN policies.
+                  - Power Platform: Solutions in an environment, Dataverse
+                    tables in an environment.
+                  - Each one was run live before it was added. 218 tasks.
+                  - Tests: tests\test_v020_more_reads.py.
 11-11-2026  v0.19 INSTALL UPDATES AUTOMATICALLY; 15 MORE READ-ONLY TASKS; A COMMAND YOUR CLI DOES NOT HAVE.
                   - FIX: when the installed CLI does not have a task's
                     command, it prints its whole help screen and still

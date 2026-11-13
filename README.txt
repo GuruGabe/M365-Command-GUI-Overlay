@@ -6,8 +6,8 @@
 1. WHAT THIS PROGRAM DOES
    M365GUI is a point-and-click front end for the CLI for Microsoft 365 (the
    "m365" command), the command-line tool for Microsoft 365 and Microsoft Entra
-   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 211
-   admin tasks as fill-in forms across 14 sections (v0.19): OneDrive, Users (Entra ID),
+   ID administration (https://pnp.github.io/cli-microsoft365/). It presents 226
+   admin tasks as fill-in forms across 14 sections (v0.21): OneDrive, Users (Entra ID),
    Groups, Licenses, Teams / M365 Groups, SharePoint, Roles and admin units,
    Service health and security, Outlook, Planner, Reports, Security, Power
    Platform and Diagnostics

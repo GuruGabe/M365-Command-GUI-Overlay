@@ -6,7 +6,7 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 211 tasks in 14 sections (counted 11-10-2026, v0.19), plus a Custom-command
+- 226 tasks in 14 sections (counted 11-13-2026, v0.21), plus a Custom-command
   mode and ten guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
   user, move a user's OneDrive files to a Team or SharePoint site, who holds
@@ -78,6 +78,29 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-13-2026 (16:50): Gabe chose to FOLD 0.21 into tonight's release: 0.20 was
+  never released on its own; 0.21 was merged on top of it (merge_021.py, hold
+  placed first) and RELEASE-NOTES-NEXT.md covers 0.20 + 0.21. The next
+  GitHub release after 0.19 is 0.21.
+- 11-13-2026 (v0.21): 8 more read-only tasks, each run live first with
+  --output text: purview retentionevent list, outlook calendargroup list
+  --userName, spo web list --url, spo feature list --scope Site|Web, spo
+  list get --title --properties, spo list view list, spo list contenttype
+  list, spo web installedlanguage list. Not added: tenant people
+  profilecardproperty list (error page), booking business list
+  (Forbidden), viva engage network list (needs consent), entra
+  administrativeunit get and planner bucket list (nothing in the tenant to
+  test them on). 226 tasks. Tests: test_v021_more_reads.py.
+- 11-13-2026 (v0.20): 7 more read-only tasks, each run live first with
+  --output text: entra app get --name --properties (NOT --save, which writes
+  a file), entra app role list --appName, entra enterpriseapp get
+  --displayName --query {...} (the display name must be unique), spo term
+  list, spo cdn policy list --cdnType (not --type), pp solution list, pp
+  dataverse table list. Not added (failed live): entra siteclassification
+  get (no Group.Unified setting), purview sensitivitylabel policysettings
+  list (not found). CLI 12.1.0 beta: same 888 commands and options as
+  12.0.0. 218 tasks. Tests: test_v020_more_reads.py.
+- 11-11-2026: v0.19 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-10-2026 (v0.19): CLI 12.0.0 has 10 commands 11.11.0 lacks
   (allCommandsFull.json): entra agent blueprint list / blueprintprincipal
   list (read-only - new tasks, run live, none in the tenant), outlook

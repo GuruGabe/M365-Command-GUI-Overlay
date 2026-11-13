@@ -409,6 +409,29 @@ TASKS = {
     "entra app permission list --appName {app} --type {ptype} --output text",
     [F("App registration display name", "app"),
      F("Which permissions", "ptype", choices=["all", "application", "delegated"], default="all")]),
+  # v0.20 (11-13-2026): run live (read-only). 'entra app get' has a --save option
+  # that writes a file - not used.
+  T("An app registration's details",
+    "One app registration: its name, application (client) ID, who can sign in to it, "
+    "when it was made, its publisher domain and notes. Use the display name from 'App "
+    "registrations made in the organization'.",
+    "entra app get --name {app} --properties "
+    "\"displayName,appId,signInAudience,createdDateTime,publisherDomain,notes\" --output text",
+    [F("App registration display name", "app")]),
+  T("Roles an app registration defines (app roles)",
+    "The app roles one app registration defines - the roles its admins can give to "
+    "people, groups or other apps. An empty result means it defines none.",
+    "entra app role list --appName {app} --output text",
+    [F("App registration display name", "app")]),
+  T("An enterprise app's details",
+    "One app from 'Apps in the organization': its name, application ID, whether it is "
+    "turned on, whether people need to be assigned to it before they can use it, its "
+    "type, publisher, who can sign in and its home page. The display name must be unique.",
+    "entra enterpriseapp get --displayName {app} --query "
+    "\"{displayName:displayName,appId:appId,accountEnabled:accountEnabled,"
+    "appRoleAssignmentRequired:appRoleAssignmentRequired,servicePrincipalType:servicePrincipalType,"
+    "publisherName:publisherName,signInAudience:signInAudience,homepage:homepage}\" --output text",
+    [F("Enterprise app display name", "app")]),
   # v0.16 (11-02-2026): run live (read-only); none in this tenant.
   T("AI agent identities (Entra Agent ID)",
     "The AI agents registered in Microsoft Entra ID with their own identity (Entra Agent "
@@ -459,6 +482,12 @@ TASKS = {
   T("Retention event types", "The event types (for example 'Employee leaves') that "
     "event-based retention labels in Purview start counting from. Blank means none.",
     "purview retentioneventtype list --output text", []),
+  # v0.21 (11-13-2026): run live (read-only); none in the tenant.
+  T("Retention events",
+    "The retention events recorded in Purview - each one starts the clock for the "
+    "event-based retention labels of its event type (for example a staff member "
+    "leaving). Blank means none have been recorded.",
+    "purview retentionevent list --output text", []),
   T("Sensitivity labels", "The sensitivity labels defined in Purview. 'The resource could "
     "not be found' means the organization has none, or its licenses do not include "
     "them (Microsoft Purview Information Protection).",
@@ -487,6 +516,12 @@ TASKS = {
     "you see another person's calendars only if they shared them with you (otherwise "
     "'Access is denied') - or when the CLI is signed in app-only.",
     "outlook calendar list --userName {email} --output text", [F("User (UPN)", "email")]),
+  # v0.21 (11-13-2026): run live (read-only).
+  T("A user's calendar groups",
+    "The calendar groups in one user's mailbox (for example 'My Calendars' and 'Other "
+    "Calendars'). Signed in as yourself, you see another person's only if they shared "
+    "them with you (otherwise 'Access is denied') - or when the CLI is signed in app-only.",
+    "outlook calendargroup list --userName {email} --output text", [F("User (UPN)", "email")]),
   T("A user's calendar events",
     "Events in one user's default calendar. Give a date range (YYYY-MM-DD) to see only those "
     "days. Signed in as yourself, you see another person's events only if they shared their "
@@ -765,6 +800,40 @@ TASKS = {
     "system lists are left out).",
     "spo list list --webUrl {url} --filter \"Hidden eq false\" --output text",
     [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  # v0.21 (11-13-2026): six more SharePoint reads, each run live (read-only).
+  T("Subsites of a site",
+    "The subsites directly under one site (not their own subsites). Blank means it has "
+    "none - most modern sites do not.",
+    "spo web list --url {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Features turned on for a site",
+    "The SharePoint features turned on: 'Site' lists the site collection's features, "
+    "'Web' lists the features of this one site.",
+    "spo feature list --webUrl {url} --scope {scope} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("Which features", "scope", choices=["Site", "Web"], default="Site")]),
+  T("A list's details (items, versions)",
+    "One list or library: how many items it holds, when it was made and last changed, "
+    "whether it keeps versions and how many, whether it is hidden and its type. Use the "
+    "name from 'Lists and libraries on a site', e.g. Documents.",
+    "spo list get --webUrl {url} --title {list} --properties "
+    "\"Title,ItemCount,Created,LastItemModifiedDate,EnableVersioning,MajorVersionLimit,Hidden,BaseTemplate\" "
+    "--output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Views of a list",
+    "The views of one list or library (the saved ways of showing it): name, whether it "
+    "is the default view and whether it is hidden.",
+    "spo list view list --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Content types in a list",
+    "The content types one list or library uses (for example Document or Folder), and "
+    "whether each one is hidden, read-only or sealed.",
+    "spo list contenttype list --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Languages a site can use",
+    "The languages installed for one site - the ones its owners can turn on for "
+    "SharePoint's own menus and pages.",
+    "spo web installedlanguage list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
   T("Files in a folder",
     "The files directly in one folder of a site (not in its subfolders). The folder is "
     "relative to the site, e.g. 'Shared Documents' or 'Shared Documents/Reports'. For a "
@@ -819,6 +888,12 @@ TASKS = {
     "'Term store groups'.",
     "spo term set list --termGroupName {group} --output text",
     [F("Term group name", "group")]),
+  # v0.20 (11-13-2026): run live (read-only).
+  T("Terms in a term set",
+    "The terms in one term set (for example every department in a Department set): name "
+    "and id. Get the names from 'Term store groups' and 'Term sets in a term group'.",
+    "spo term list --termGroupName {group} --termSetName {set} --output text",
+    [F("Term group name", "group"), F("Term set name", "set")]),
   T("Site designs",
     "The organization's custom site designs (templates people can pick when they create "
     "or apply a site). Blank means none.",
@@ -841,6 +916,12 @@ TASKS = {
   T("Office 365 CDN origins",
     "The libraries / folders the Office 365 CDN serves files from. Blank means none.",
     "spo cdn origin list --type {type} --output text",
+    [F("Which CDN", "type", choices=["Public", "Private"], default="Public")]),
+  # v0.20 (11-13-2026): run live (read-only).
+  T("Office 365 CDN policies",
+    "The Office 365 CDN's policies - which file types it serves and which site "
+    "classifications it leaves out.",
+    "spo cdn policy list --cdnType {type} --output text",
     [F("Which CDN", "type", choices=["Public", "Private"], default="Public")]),
   T("Tenant app catalog address",
     "The address of the SharePoint app catalog site (where SharePoint apps and add-ins "
@@ -1160,6 +1241,20 @@ TASKS = {
     "name, when each was made, published and last changed. Blank means none. You need "
     "to be a Power Platform or Global administrator.",
     "pp copilot list --environmentName {env} --asAdmin --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  # v0.20 (11-13-2026): run live (read-only).
+  T("Solutions in an environment",
+    "The solutions (packages of apps, flows, tables and other parts) installed in one "
+    "environment: name, version and publisher. You need access to the environment's "
+    "Dataverse, or to be a Power Platform or Global administrator.",
+    "pp solution list --environmentName {env} --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  T("Dataverse tables in an environment",
+    "Every Dataverse table in one environment (hundreds - most are Microsoft's own): "
+    "schema name, logical name and whether it is part of a managed solution. You need "
+    "access to the environment's Dataverse, or to be a Power Platform or Global "
+    "administrator.",
+    "pp dataverse table list --environmentName {env} --output text",
     [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
   T("On-premises data gateways",
     "The on-premises data gateways that let Power Platform and Power BI reach servers "
