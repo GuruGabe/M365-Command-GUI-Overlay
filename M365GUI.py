@@ -47,7 +47,7 @@ import m365_update             # macOS / Linux updater + What's new (from GAMGUI
 import m365_setup              # v0.12: the "Set up the CLI" window's facts
 
 APP_NAME = "M365GUI"
-APP_VERSION = "0.22"
+APP_VERSION = "0.24"
 
 # GitHub repo that publishes M365GUI releases, and the API endpoint used by
 # the built-in update check. The check only READS this public endpoint.
@@ -1180,8 +1180,30 @@ class M365Gui(tk.Tk):
                                                                         "power_platform"):
             self._run_record_workflow(self.current_task["workflow"]); return
 
+        # v0.23: a password box left blank on a task with random_key (Reset
+        # password) gets a random password. It goes into the box so the command
+        # carries it, is shown once in its own window (Copy button), and the box
+        # is emptied again after the run starts - the next Run makes a new one.
+        # The session log masks it like a typed password (redact_secrets).
+        new_secret = ""
+        random_key = self.current_task.get("random_key", "") if self.current_task else ""
+        for key, var in self.field_vars:
+            if random_key and key == random_key and not var.get().strip():
+                new_secret = random_password()
+                var.set(new_secret)
+                self._preview()
+
+        def forget_secret():
+            # Empties the box again so a password made here is not reused.
+            for key, var in self.field_vars:
+                if key == random_key and new_secret and var.get() == new_secret:
+                    var.set("")
+            if new_secret:
+                self._preview()
+
         got = self._preview_argv()
         if not got:
+            forget_secret()
             return
         command_text, argv = got
 
@@ -1207,6 +1229,11 @@ class M365Gui(tk.Tk):
             self._append_output("(saving the results to " + save_to + ")\n")
         self.run_button.config(state="disabled")
         self._remember_recent()
+        if new_secret:
+            self._show_secret("New password for %s - shown only now, it is not saved "
+                              "anywhere. Check the output that the reset worked."
+                              % self._collect().get("email", "the user"), new_secret)
+            forget_secret()
 
         def worker():
             try:

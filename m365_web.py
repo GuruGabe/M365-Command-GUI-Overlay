@@ -364,13 +364,29 @@ def api_run(data):
     section, task = task_at(data)
     if not task or task["workflow"]:
         return {"error": "Unknown task."}
-    _display, argv, err = cat.build_command(task, data.get("values") or {}, section)
+    values = dict(data.get("values") or {})
+    # v0.23: a blank password box on a task with random_key (Reset password)
+    # gets a random password, handed to the page ONCE (job.secret, as the
+    # compromised-account workflow does) - never kept by the server.
+    secret = ""
+    random_key = task.get("random_key", "")
+    if random_key and not str(values.get(random_key) or "").strip():
+        secret = app.random_password()
+        values[random_key] = secret
+    _display, argv, err = cat.build_command(task, values, section)
     if err:
         return {"error": err}
     if task["destructive"] and not data.get("confirmed"):
         return {"error": "This task changes or deletes data - confirm it first."}
     fmt = cat.SAVE_FORMATS.get(data.get("save") or "") if cat.saves_output(task) else None
-    return {"job": start_job(lambda job: run_command(job, argv, fmt, task["name"])).id}
+
+    def target(job):
+        if secret:
+            job.secret = {"title": "New password for %s - shown only now, it is not saved "
+                                   "anywhere. Check the output that the reset worked."
+                                   % (values.get("email") or "the user"), "value": secret}
+        run_command(job, argv, fmt, task["name"])
+    return {"job": start_job(target).id}
 
 
 def api_workflow(data):

@@ -51,6 +51,8 @@ for category, tasks in c.TASKS.items():
         for field in task["fields"]:
             if not field.get("choices"):
                 continue
+            if field["choices"] == ["No", "Yes"]:
+                continue                    # v0.23: an on/off switch - Yes = the bare --flag
             flag = re.search(r"(--[A-Za-z0-9]+) \{" + re.escape(field["key"]) + r"\}", template)
             if not flag or flag.group(1) not in options:
                 continue

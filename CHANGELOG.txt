@@ -1,6 +1,48 @@
 ================================================================================
   CHANGELOG - M365GUI
 ================================================================================
+11-16-2026  v0.24 CREATE USER: RANDOM PASSWORD, CHANGE AT FIRST SIGN-IN A CHOICE.
+                  - Create user: leave the password blank for a random one,
+                    shown once in its own window (desktop and browser) and
+                    never saved in a log - as Reset password since 0.23.
+                    New box 'Require a password change at first sign-in',
+                    Yes / No, default No. Before, a password had to be typed
+                    and the change was never required.
+                  - SharePoint: Retention labels available on a site, Web
+                    parts available on a site (read-only, run live first).
+                    249 tasks.
+                  - Tests: tests\test_v024_create_user.py.
+11-16-2026  v0.23 UPDATES WORK ON LOCKED-DOWN PCs; RESET PASSWORD CHOICES; 12 READS.
+                  - updatem365gui.ps1 1.2: works in PowerShell's Constrained
+                    Language Mode - the mode a portable copy's updater runs in
+                    on PCs with AppLocker / WDAC script rules. Before, it
+                    stopped on its first line there ('Cannot set property')
+                    without writing a log, so Check for updates and 'Install
+                    updates automatically' could not update a portable copy
+                    on such a PC. In Full Language nothing changes. The update
+                    log now names the PowerShell language mode.
+                  - Power Platform: Solution publishers in an environment,
+                    AI Builder models in an environment.
+                  - Service health and security: Microsoft Search
+                    connectors, Custom attributes apps add to accounts
+                    (directory extensions).
+                  - OneDrive: A user's OneNote notebooks.
+                  - SharePoint: Columns of a content type in a list, Default
+                    column values in a library, Retention label of a list,
+                    Site design tasks waiting to run, SharePoint Embedded
+                    container types, Knowledge hub site, SharePoint
+                    Premium content centers.
+                  - Each task was run live before it was added. 247 tasks.
+                  - Reset password: 'Require a password change at next
+                    sign-in' is now a Yes/No box, default No (before, the
+                    change was always required - wrong for accounts whose
+                    users may not change their own password, e.g.
+                    students). Leave the password blank for a random one,
+                    shown once in its own window and never saved in a log
+                    (desktop and browser). A CSV run still needs a
+                    password in every row.
+                  - Tests: tests\test_v023_more_reads.py,
+                    tests\test_v023_updater_clm.py.
 11-13-2026  v0.22 NINE MORE READ-ONLY TASKS.
                   - Roles and admin units: Admin role permissions (which are
                     privileged).

@@ -18,9 +18,19 @@ import re
 #   [bracketed] parts drop when blank, bare flags (--force) are literal.
 # =============================================================================
 
-def T(name, desc, template, fields, destructive=False, workflow=""):
-    return {"name": name, "desc": desc, "template": template,
+def T(name, desc, template, fields, destructive=False, workflow="", random_key=""):
+    task = {"name": name, "desc": desc, "template": template,
             "fields": fields, "destructive": destructive, "workflow": workflow}
+    # v0.23: random_key names a password box that gets a random password when
+    # it is left blank for a single run (Reset password). Only set when used.
+    if random_key:
+        task["random_key"] = random_key
+    return task
+
+# v0.23: the choices of an on/off box. In a template, [--flag {key}] with a
+# YES_NO box becomes the bare --flag for Yes and nothing for No (see
+# build_command) - the m365 CLI's switches take no value.
+YES_NO = ["No", "Yes"]
 
 def F(label, key, required=True, choices=None, default=""):
     return {"label": label, "key": key, "required": required,
@@ -46,18 +56,38 @@ TASKS = {
   T("Get user info", "Shows the details of one user, found by their UPN.",
     "entra user get --userName {email} --output text",
     [F("User (UPN) e.g. jdoe@contoso.com", "email")]),
+  # v0.24 (11-16-2026): as Reset password (0.23) - blank password = a random one
+  # shown once; the change at next sign-in is a choice (default No).
   T("Create user",
     "Creates a new member account. Set the usage location so the account can "
-    "be licensed later.",
-    "entra user add --displayName {display} --userName {email} --password {password} [--usageLocation {loc}]",
+    "be licensed later. Leave the password box blank for a random one (16 letters, "
+    "digits and symbols), shown once in its own window with a Copy button and never "
+    "saved in any log. Choose Yes to make the user change it at their first sign-in. "
+    "Run for each CSV row needs a password in every row.",
+    "entra user add --displayName {display} --userName {email} --password {password} "
+    "[--usageLocation {loc}] [--forceChangePasswordNextSignIn {force}]",
     [F("Display name e.g. John Doe", "display"),
      F("User (UPN) e.g. jdoe@contoso.com", "email"),
-     F("Initial password", "password"),
-     F("Usage location e.g. US (optional)", "loc", False)]),
+     F("Initial password (blank = a random one)", "password", False),
+     F("Usage location e.g. US (optional)", "loc", False),
+     F("Require a password change at first sign-in", "force", False, choices=YES_NO,
+       default="No")],
+    random_key="password"),
+  # v0.23 (11-16-2026): the change at next sign-in is a choice (default No - some
+  # accounts, e.g. students, may not change their own password), and a blank
+  # password box gets a random password (desktop + browser; shown once).
   T("Reset password",
-    "Sets a new password and forces a change at next sign-in.",
-    "entra user set --userName {email} --resetPassword --newPassword {password} --forceChangePasswordNextSignIn",
-    [F("User (UPN)", "email"), F("New password", "password")]),
+    "Sets a new password. Leave the password box blank for a random one (16 letters, "
+    "digits and symbols), shown once in its own window with a Copy button and never "
+    "saved in any log. Choose Yes to make the user change it at their next sign-in; "
+    "leave No for accounts whose users may not change their own password (for example "
+    "students). Run for each CSV row needs a password in every row.",
+    "entra user set --userName {email} --resetPassword --newPassword {password} "
+    "[--forceChangePasswordNextSignIn {force}]",
+    [F("User (UPN)", "email"), F("New password (blank = a random one)", "password", False),
+     F("Require a password change at next sign-in", "force", False, choices=YES_NO,
+       default="No")],
+    random_key="password"),
   T("Rename user (display / first / last name)",
     "Changes the user's names. The sign-in name (UPN) does not change.",
     "entra user set --userName {email} [--displayName {display}] [--firstName {first}] [--lastName {last}]",
@@ -382,6 +412,17 @@ TASKS = {
     "tenant security alerts list --output text", []),
   T("Organization info", "The tenant's ID, name and default domain.",
     "tenant info get --output text", []),
+  # v0.23 (11-16-2026): run live (read-only).
+  T("Microsoft Search connectors",
+    "The Microsoft Search (Graph) connectors that bring outside content into Microsoft "
+    "Search and Copilot: id, name and state. Blank means none.",
+    "external connection list --output text", []),
+  T("Custom attributes apps add to accounts (directory extensions)",
+    "The extra attributes apps have added to users, groups or devices in Entra ID (for "
+    "example by a sync tool or a provisioning app): name, the app that owns it and the "
+    "objects it applies to. Fill in an app's name to see only its attributes.",
+    "graph directoryextension list [--appName {app}] --output text",
+    [F("Only this app's attributes (app display name, optional)", "app", False)]),
   T("Apps in the organization (enterprise apps)",
     "Every app that has access to the organization - review these regularly.",
     "entra enterpriseapp list --output text", []),
@@ -890,6 +931,35 @@ TASKS = {
     "when. Blank means none was ever applied.",
     "spo sitedesign run list --webUrl {url} --output text",
     [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  # v0.23 (11-16-2026): three more list reads, each run live (read-only).
+  T("Columns of a content type in a list",
+    "The columns one content type uses in one list or library (for example the "
+    "'Document' content type of Documents): name, internal name, id and whether it "
+    "is hidden. See 'Content types in a list' for the names.",
+    "spo contenttype field list --webUrl {url} --listTitle {list} --contentTypeName {ctype} "
+    "--output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list"), F("Content type name e.g. Document", "ctype", default="Document")]),
+  T("Default column values in a library",
+    "The default values set for columns in one document library (filled in "
+    "automatically for files added to a folder). Blank means none are set.",
+    "spo list defaultvalue list --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Retention label of a list",
+    "The retention label set as the default for one list or library (applied to new "
+    "items), if any. Blank means none is set.",
+    "spo list retentionlabel get --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  # v0.24 (11-16-2026): two site reads, run live (read-only).
+  T("Retention labels available on a site",
+    "The retention labels that can be applied in one site (published to it from "
+    "Microsoft Purview): name, id and how long items are kept. Blank means none.",
+    "spo web retentionlabel list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Web parts available on a site",
+    "The web parts people can add to pages on one site - Microsoft's own and any your "
+    "organization deployed: id, name and title.",
+    "spo web clientsidewebpart list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
   T("Files in a folder",
     "The files directly in one folder of a site (not in its subfolders). The folder is "
     "relative to the site, e.g. 'Shared Documents' or 'Shared Documents/Reports'. For a "
@@ -957,6 +1027,24 @@ TASKS = {
   T("Site scripts",
     "The site scripts (the actions behind site designs). Blank means none.",
     "spo sitescript list --output text", []),
+  # v0.23 (11-16-2026): run live (read-only); none set here.
+  T("Site design tasks waiting to run",
+    "Site designs that were asked to run on one site and have not finished yet. Blank "
+    "means none are waiting.",
+    "spo sitedesign task list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("SharePoint Embedded container types",
+    "The SharePoint Embedded container types in the organization (the kinds of storage "
+    "apps such as Loop or third-party apps keep their files in). Blank means none.",
+    "spe containertype list --output text", []),
+  T("Knowledge hub site",
+    "The site set as the organization's knowledge hub (used by Viva Topics / SharePoint "
+    "knowledge features). Blank means none is set.",
+    "spo knowledgehub get --output text", []),
+  T("SharePoint Premium content centers",
+    "The SharePoint Premium (Syntex) content centers - the sites that hold document "
+    "understanding models. Blank means none.",
+    "spp contentcenter list --output text", []),
   T("Custom themes",
     "The organization's own SharePoint color themes. Blank means none.",
     "spo theme list --output text", []),
@@ -1177,6 +1265,12 @@ TASKS = {
     "never been set up - it is created the first time they open it).",
     "entra user get --userName {email} --properties userPrincipalName,mySite --output text",
     [F("User (UPN)", "email")]),
+  # v0.23 (11-16-2026): run live (read-only).
+  T("A user's OneNote notebooks",
+    "The OneNote notebooks in one user's OneDrive: name, when each was made and its id. "
+    "Signed in as yourself, you see another person's only if they shared them with you "
+    "(otherwise 'Access denied') - or when the CLI is signed in app-only.",
+    "onenote notebook list --userName {email} --output text", [F("User (UPN)", "email")]),
   T("Copy a user's OneDrive files to another user",
     "For a person who is leaving: copies EVERYTHING in their OneDrive into a "
     "new folder in another person's OneDrive (e.g. their manager). Nothing "
@@ -1312,6 +1406,20 @@ TASKS = {
     "administrator.",
     "pp dataverse table list --environmentName {env} --output text",
     [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  # v0.23 (11-16-2026): run live (read-only).
+  T("Solution publishers in an environment",
+    "The publishers of the solutions in one environment (the company or person each "
+    "solution says it comes from): id, unique name and display name. Microsoft's own "
+    "publishers are left out. You need access to the environment's Dataverse, or to be a "
+    "Power Platform or Global administrator.",
+    "pp solution publisher list --environmentName {env} --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
+  T("AI Builder models in an environment",
+    "The AI Builder models (forms processing, prediction, text and other AI models) "
+    "people built in one environment. Blank means none. You need access to the "
+    "environment's Dataverse, or to be a Power Platform or Global administrator.",
+    "pp aibuildermodel list --environmentName {env} --output text",
+    [F("Environment name (the Name column of 'Power Platform environments')", "env")]),
   T("On-premises data gateways",
     "The on-premises data gateways that let Power Platform and Power BI reach servers "
     "inside your network - only the ones YOU are a gateway admin of (the CLI cannot list "
@@ -1446,6 +1554,14 @@ def build_command(task, values, category=""):
     # boxes are removed first (clean_identifier_values, as in GAMGUI 2.93).
     values = clean_identifier_values(task, values, category)
     template = task["template"]
+    # v0.23: a YES_NO box in a segment [--flag {key}] is an on/off switch -
+    # Yes leaves the bare --flag (the CLI's switches take no value), No or
+    # blank removes the segment.
+    for field in task["fields"]:
+        if field.get("choices") == YES_NO:
+            on = values.get(field["key"], "").strip() == "Yes"
+            template = re.sub(r"\[(--[A-Za-z]+) \{%s\}\]" % re.escape(field["key"]),
+                              lambda m: m.group(1) if on else "", template)
 
     def seg_sub(match):
         segment = match.group(0)[1:-1]

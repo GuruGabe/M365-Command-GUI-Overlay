@@ -111,7 +111,7 @@ def find(section, name):
                 if t["name"] == name:
                     return t
 reset = find("Users (Entra ID)", "Reset password")
-check([f["picker"] for f in reset["fields"]] == ["user", None], "a task's boxes carry their Pick... list")
+check([f["picker"] for f in reset["fields"]] == ["user", None, None], "a task's boxes carry their Pick... list")
 
 # ---- 2. build / run / save ----------------------------------------------------------------
 s, b, _h = req("POST", "/api/build", {"cat": "Users (Entra ID)", "idx": reset["idx"],

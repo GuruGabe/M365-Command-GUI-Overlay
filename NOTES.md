@@ -6,7 +6,7 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 235 tasks in 14 sections (counted 11-13-2026, v0.22), plus a Custom-command
+- 249 tasks in 14 sections (counted 11-16-2026, v0.24), plus a Custom-command
   mode and ten guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
   user, move a user's OneDrive files to a Team or SharePoint site, who holds
@@ -78,6 +78,36 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-16-2026 (v0.24, built in _scratch\m365dev24): Create user gets random_key
+  + YES_NO force box (CLI user-add.js sends forceChangePasswordNextSignIn false
+  when the switch is left out, and would generate + print a password if
+  --password were left out - so M365GUI always passes one). Live read-only:
+  spo web retentionlabel list (none here), spo web clientsidewebpart list (76).
+  Not added: teams fun/guest/member/messaging settings (the Team settings
+  workflow reads them via teams team get), teams tab list (needs IDs),
+  teams meeting list / todo (signed-in user's own only). 249 tasks.
+- 11-16-2026 (v0.23): updatem365gui.ps1 1.2 works in PowerShell Constrained
+  Language Mode (same fix as GAMGUI updategamgui.ps1 2.3 - see GAMGUI NOTES
+  11-16): found when test_v019_silent_update.py failed in a CLM session.
+  Plus 8 read-only tasks, each run live first: pp solution publisher list,
+  pp aibuildermodel list, spo contenttype field list --listTitle
+  --contentTypeName, spo list defaultvalue list, spo list retentionlabel
+  get, spo sitedesign task list, spe containertype list, spo knowledgehub
+  get. Not added: purview threatassessment list ('Required authentication
+  information is either missing or not valid'), spo homesite get (none
+  set; 'Home sites' already lists them), spo hubsite data get (niche).
+  Round 2 (also run live first): external connection list, graph
+  directoryextension list [--appName], onenote notebook list --userName,
+  spp contentcenter list. Not added: graph schemaextension list (niche),
+  onenote notebook list --groupId (Access denied for a Team's group).
+  247 tasks. Tests: test_v023_more_reads.py, test_v023_updater_clm.py.
+  Round 3 (Gabe's ask): Reset password - force change at next sign-in is
+  a YES_NO box (default No; build_command turns [--flag {key}] into a bare
+  switch), blank password = random_password() shown once (desktop
+  _show_secret / browser job.secret), box emptied after the run starts.
+  No email step: the signed-in account has no Exchange Online mailbox.
+  Test: test_v023_reset_password.py.
+- 11-16-2026: v0.22 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-13-2026 (v0.22): 9 more read-only tasks, each run live first with
   --output text: entra rolepermission list --resourceNamespace
   microsoft.directory [--privileged true] (813 / 93 rows), spo field list,
