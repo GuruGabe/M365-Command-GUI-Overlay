@@ -6,7 +6,7 @@
   Python standard library only. The task catalog (`m365_catalog.py`), the
   guided workflows (`m365_workflows.py`) and the setup facts
   (`m365_setup.py`) are shared by both.
-- 226 tasks in 14 sections (counted 11-13-2026, v0.21), plus a Custom-command
+- 235 tasks in 14 sections (counted 11-13-2026, v0.22), plus a Custom-command
   mode and ten guided workflows: staff hand-off, remove all guest users,
   compromised account response, copy a user's OneDrive files to another
   user, move a user's OneDrive files to a Team or SharePoint site, who holds
@@ -78,6 +78,20 @@ a task is a few lines and needs no new code. Please keep it dependency-free
 before adding it.
 
 ## Session log
+- 11-13-2026 (v0.22): 9 more read-only tasks, each run live first with
+  --output text: entra rolepermission list --resourceNamespace
+  microsoft.directory [--privileged true] (813 / 93 rows), spo field list,
+  spo folder list --parentFolderUrl [--recursive true], spo list webhook
+  list, spo eventreceiver list [--listTitle], spo propertybag list, spo
+  customaction list --scope All|Site|Web, spo app instance list, spo
+  sitedesign run list. Not added: teams tab list (needs team and channel
+  ids, not names), spo storageentity list (tenant properties; niche).
+  235 tasks. Tests: test_v022_more_reads.py.
+  11-16: test_v09_redact.py failed ONCE in a slow full run (AttributeError
+  _bulk_window): its 20 s wait for the stand-in command ran out, so the CSV
+  dialog refused ('A command is already running'). Wait raised to 60 s and a
+  clear FAIL line added; app code unchanged.
+- 11-13-2026: v0.21 published by the 5 PM daily release (Release-M365GUI.ps1).
 - 11-13-2026 (16:50): Gabe chose to FOLD 0.21 into tonight's release: 0.20 was
   never released on its own; 0.21 was merged on top of it (merge_021.py, hold
   placed first) and RELEASE-NOTES-NEXT.md covers 0.20 + 0.21. The next

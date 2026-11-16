@@ -40,7 +40,10 @@ app._build_invocation = lambda argv: [sys.executable, "-c", "print('ok')"]
 app._capture = lambda argv: (0, "")
 
 def wait_done():
-    end = time.time() + 20
+    # 60 s (was 20 until 11-16-2026): on a busy PC the stand-in command once took
+    # longer, the bulk dialog then refused ("A command is already running") and
+    # the test died with an AttributeError instead of a FAIL line.
+    end = time.time() + 60
     while time.time() < end:
         app.update()
         if str(app.run_button.cget("state")) == "normal" and app.running_proc is None:
@@ -69,6 +72,10 @@ with open(data, "w", newline="") as h:
     w = csv.writer(h)
     w.writerow(["upn", "pw"])
     w.writerow(["a@contoso.com", "RowSecret1!"])
+check(app.running_proc is None, "the first run finished before the CSV dialog opens")
+if app.running_proc is not None:
+    print("FAILURES: %d" % len(fails))
+    sys.exit(1)
 app._bulk_dialog()
 win = app._bulk_window
 win.withdraw()

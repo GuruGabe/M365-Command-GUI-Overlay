@@ -676,6 +676,15 @@ TASKS = {
     "entra roledefinition get --displayName {role} --query "
     "\"rolePermissions[].allowedResourceActions[]\" --output text",
     [F("Role name e.g. Helpdesk Administrator", "role")]),
+  # v0.22 (11-13-2026): run live (read-only); --privileged true checked live.
+  T("Admin role permissions (which are privileged)",
+    "Every permission Microsoft Entra admin roles are built from (for example "
+    "microsoft.directory/users/password/update) and whether it is privileged - one that "
+    "could be used to take over accounts or the organization. Choose true to see only the "
+    "privileged ones. Read-only.",
+    "entra rolepermission list --resourceNamespace microsoft.directory [--privileged {priv}] "
+    "--output text",
+    [F("Only the privileged permissions? (blank = all)", "priv", False, choices=["", "true"])]),
   T("Give someone an admin role (whole organization)",
     "Assigns an Entra admin role, e.g. 'Helpdesk Administrator', to a user. Get the exact "
     "name from 'List admin roles'.",
@@ -833,6 +842,53 @@ TASKS = {
     "The languages installed for one site - the ones its owners can turn on for "
     "SharePoint's own menus and pages.",
     "spo web installedlanguage list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  # v0.22 (11-13-2026): eight more SharePoint reads, each run live (read-only).
+  T("Columns in a list",
+    "Every column of one list or library - also SharePoint's built-in hidden ones "
+    "(Hidden = true): its display name, internal name and id.",
+    "spo field list --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Folders in a library",
+    "The folders in one folder of a site. The Documents library's folder is "
+    "'Shared Documents'; a folder inside it is e.g. 'Shared Documents/Reports'. Choose "
+    "true to include the folders inside folders too (a big library takes a while).",
+    "spo folder list --webUrl {url} --parentFolderUrl {folder} [--recursive {rec}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"),
+     F("Folder e.g. Shared Documents", "folder", default="Shared Documents"),
+     F("Include folders inside folders? (blank = this level only)", "rec", False, choices=["", "true"])]),
+  T("Webhooks on a list",
+    "The webhook subscriptions on one list or library - outside services SharePoint "
+    "tells when something changes: the address it calls and when each one expires. "
+    "Blank means none.",
+    "spo list webhook list --webUrl {url} --listTitle {list} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name e.g. Documents", "list")]),
+  T("Event receivers on a site or list",
+    "Code SharePoint runs when something happens on one site - or on one list or library "
+    "when its name is filled in. SharePoint adds some itself; others come from add-ins "
+    "and older solutions.",
+    "spo eventreceiver list --webUrl {url} [--listTitle {list}] --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("List or library name (blank = the site itself)", "list", False)]),
+  T("A site's property bag",
+    "The settings stored in one site's property bag (key and value) - used by "
+    "SharePoint, site templates and add-ins.",
+    "spo propertybag list --webUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Custom actions on a site",
+    "Custom actions on one site: SharePoint Framework extensions (headers, footers, "
+    "command buttons), scripts and menu items added by apps or admins. 'Site' is the "
+    "whole site collection, 'Web' this one site. Blank means none.",
+    "spo customaction list --webUrl {url} --scope {scope} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url"), F("Where", "scope", choices=["All", "Site", "Web"], default="All")]),
+  T("Apps installed on a site",
+    "The SharePoint apps (add-ins and SharePoint Framework solutions) installed on one "
+    "site. Blank means none.",
+    "spo app instance list --siteUrl {url} --output text",
+    [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
+  T("Site designs applied to a site",
+    "Each time a site design (site template) was applied to one site: which one and "
+    "when. Blank means none was ever applied.",
+    "spo sitedesign run list --webUrl {url} --output text",
     [F("Site URL e.g. https://contoso.sharepoint.com/sites/Team", "url")]),
   T("Files in a folder",
     "The files directly in one folder of a site (not in its subfolders). The folder is "
